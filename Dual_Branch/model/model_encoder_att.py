@@ -5,7 +5,7 @@ from einops import rearrange
 
 class Encoder(nn.Module):
     """
-    Encoder.
+    인코더입니다.
     """
 
     def __init__(self, network):
@@ -37,7 +37,7 @@ class Encoder(nn.Module):
             modules = list(cnn.children())[:-2]
         elif self.network=='resnet101':  #2048,1/32H,1/32W
             cnn = models.resnet101(pretrained=True)  
-            # Remove linear and pool layers (since we're not doing classification)
+            # 분류를 수행하지 않으므로 linear와 pooling 계층을 제거합니다.
             modules = list(cnn.children())[:-2]
         elif self.network=='resnet152': #512,1/32H,1/32W
             cnn = models.resnet152(pretrained=True)  
@@ -75,10 +75,10 @@ class Encoder(nn.Module):
 
     def forward(self, imageA, imageB):
         """
-        Forward propagation.
+        순전파를 수행합니다.
 
-        :param images: images, a tensor of dimensions (batch_size, 3, image_size, image_size)
-        :return: encoded images
+        :param images: (batch_size, 3, image_size, image_size) 형태의 이미지 텐서
+        :return: 인코딩된 이미지 특징
         """
         if 'segformer' not in self.network:
             # feat1 = self.cnn(imageA)  # (batch_size, 2048, image_size/32, image_size/32)
@@ -113,9 +113,9 @@ class Encoder(nn.Module):
 
     def fine_tune(self, fine_tune=True):
         """
-        Allow fine-tuning of embedding layer? (Only makes sense to not-allow if using pre-trained embeddings).
+        임베딩/백본 계층의 미세 조정을 허용할지 설정합니다.
 
-        :param fine_tune: Allow?
+        :param fine_tune: 미세 조정 허용 여부
         """
         if 'segformer' in self.network:
             for p in self.cnn.parameters():
@@ -125,7 +125,7 @@ class Encoder(nn.Module):
         else:
             for p in self.cnn.parameters():
                 p.requires_grad = False
-            # If fine-tuning, only fine-tune convolutional blocks 3 through 4
+            # 미세 조정 시 convolution block 3~4만 학습합니다.
             for c in list(self.cnn.children())[:]:
                 for p in c.parameters():
                     p.requires_grad = fine_tune
@@ -206,7 +206,7 @@ class MultiHeadAtt(nn.Module):
         self._reset_parameters()
 
     def _reset_parameters(self):
-        """Initiate parameters in the transformer model."""
+        """Transformer 모델의 파라미터를 초기화합니다."""
         for p in self.parameters():
             if p.dim() > 1:
                 nn.init.xavier_uniform_(p)
@@ -230,11 +230,11 @@ class MultiHeadAtt(nn.Module):
             x2_feat = self.fuse_conv(x1_feat*dif) #+ dif
             x3_feat = x2_feat#self.fuse_conv2(x3_feat_dif)# + x3_feat
 
-        x1 = x1_feat.view(batch, c, -1).transpose(-1, 1)  # batch, hw, c
+        x1 = x1_feat.view(batch, c, -1).transpose(-1, 1)  # 배치, 높이*너비, 채널
         x2 = x2_feat.view(batch, c, -1).transpose(-1, 1)
         x3 = x3_feat.view(batch, c, -1).transpose(-1, 1)
         x1_feat_buff = x1_feat_buff.view(batch, c, -1).transpose(-1, 1)
-        # add LN
+        # LayerNorm 추가
         # x1 = self.Q_LN(x1)
         # x2 = self.K_LN(x2)
 
@@ -271,7 +271,7 @@ class Transformer(nn.Module):
         group = dim_q
         self.PCM = nn.Sequential(
             nn.Conv2d(dim_q, dim_q, kernel_size=(3, 3), stride=1, padding=(1, 1), groups=group),
-            # the 1st convolution
+            # 첫 번째 convolution
             nn.BatchNorm2d(dim_q),
             nn.GELU(),
             nn.Conv2d(dim_q, dim_q, kernel_size=(1, 1), stride=1),
@@ -285,22 +285,22 @@ class Transformer(nn.Module):
         x2_feat = x2.transpose(-1, 1).view(batch, c, h, w)
         x3_feat = x3.transpose(-1, 1).view(batch, c, h, w)
         if True:
-            x1_feat = x1_feat + self.Q_d_conv(x1_feat)#.view(batch, c, -1).transpose(-1, 1)  # batch, hw, c
+            x1_feat = x1_feat + self.Q_d_conv(x1_feat)#.view(batch, c, -1).transpose(-1, 1)  # 배치, 높이*너비, 채널
             x2_feat = x2_feat + self.K_d_conv(x2_feat)#.view(batch, c, -1).transpose(-1, 1)
             x3_feat = x3_feat + self.K_d_conv(x3_feat)#.view(batch, c, -1).transpose(-1, 1)
-            x1 = x1_feat.view(batch, c, -1).transpose(-1, 1)  # batch, hw, c
+            x1 = x1_feat.view(batch, c, -1).transpose(-1, 1)  # 배치, 높이*너비, 채널
             x2 = x2_feat.view(batch, c, -1).transpose(-1, 1)
             x3 = x3_feat.view(batch, c, -1).transpose(-1, 1)
-            # res:
+            # 잔차 연결:
             res = x1_feat  # self.PCM(x1_feat)
             res = res.view(batch, c, -1).transpose(-1, 1)
 
 
         if self.norm_first:
-            x = self.att(self.norm1(x1), self.norm1(x2), self.norm1(x3)) + res  # batch, hw, c
+            x = self.att(self.norm1(x1), self.norm1(x2), self.norm1(x3)) + res  # 배치, 높이*너비, 채널
             x = self.feedforward(self.norm2(x)) + x
         else:
-            x = self.norm1(self.att(x1, x2, x3) + res)  # batch, hw, c
+            x = self.norm1(self.att(x1, x2, x3) + res)  # 배치, 높이*너비, 채널
             x = self.norm2(self.feedforward(x) + x)
         return x
 
@@ -330,13 +330,13 @@ class Q_Transformer(nn.Module):
 
 class AttentiveEncoder(nn.Module):
     """
-    One visual transformer block
+    One 시각화 transformer block
     """
     def __init__(self, train_stage, n_layers, feature_size, heads, dropout=0.):
         super(AttentiveEncoder, self).__init__()
         h_feat, w_feat, channels = feature_size
         self.train_stage = train_stage
-        # change captioning branch
+        # 변화 캡션 branch
         self.h_embedding = nn.Embedding(h_feat, int(channels/2))
         self.w_embedding = nn.Embedding(w_feat, int(channels/2))
         self.Dynamic_DIF_aware_TR = nn.ModuleList([])
@@ -347,11 +347,11 @@ class AttentiveEncoder(nn.Module):
                             hidden_dim=4 * channels, dropout=dropout, norm_first=False),
                 nn.Linear(channels* 2, channels)
             ]))
-        ## all modules related to captioning:
+        ## 캡션 관련 모든 모듈:
         self.cap_modules_list = [self.h_embedding, self.w_embedding,
                                  self.Dynamic_DIF_aware_TR]
 
-        # change detection branch
+        # 변화 탐지 branch
         self.h_embedding_CD = nn.Embedding(h_feat, int(channels/2))
         self.w_embedding_CD = nn.Embedding(w_feat, int(channels/2))
         dims = [64, 128, 320, 512]
@@ -380,13 +380,13 @@ class AttentiveEncoder(nn.Module):
             nn.ConvTranspose2d(dim*2, 2*dims[max(i-1,0)], 4, stride=2, padding=1),
         ) for i, dim in enumerate(dims)])
 
-        num_classes = 3 # background, road, building
+        num_classes = 3 # 배경, 도로, 건물
         self.to_seg = nn.Sequential(
             nn.ConvTranspose2d(dims[0] * 2, dims[0], 4, stride=2, padding=1),
             nn.Conv2d(int(dims[0]), num_classes, 1),
         )
 
-        # all modules related to change detection:
+        # 변화 탐지 관련 모든 모듈:
         self.CD_modules_list = [self.Transformer_aug_CD, self.conv_dif, self.conv_fuse, self.cos,
                                 self.to_fused, self.to_seg,self.h_embedding_CD, self.w_embedding_CD
                                 ]
@@ -394,7 +394,7 @@ class AttentiveEncoder(nn.Module):
         self._reset_parameters()
 
     def _reset_parameters(self):
-        """Initiate parameters in the transformer model."""
+        """Transformer 모델의 파라미터를 초기화합니다."""
         for p in self.parameters():
             if p.dim() > 1:
                 nn.init.xavier_uniform_(p)
@@ -427,7 +427,7 @@ class AttentiveEncoder(nn.Module):
         return x
     def prepare_caption(self, img1, img2, CD_feat_list=None):
         batch, c, h, w = img1.shape
-        img1 = img1.view(batch, c, -1).transpose(-1, 1)  # batch, hw, c
+        img1 = img1.view(batch, c, -1).transpose(-1, 1)  # 배치, 높이*너비, 채널
         img2 = img2.view(batch, c, -1).transpose(-1, 1)
         img_sa1, img_sa2 = img1, img2
 
@@ -439,7 +439,7 @@ class AttentiveEncoder(nn.Module):
 
         img1 = img_sa1_tr1.transpose(-1, 1).view(batch, c, h, w)
         img2 = img_sa2_tr1.transpose(-1, 1).view(batch, c, h, w)
-        # prepare A B feat for detection branch
+        # 탐지 branch에 사용할 A/B 특징 준비
         feat_list = []
         feat_list.append(img1)
         feat_list.append(img2)
@@ -449,7 +449,7 @@ class AttentiveEncoder(nn.Module):
     def change_detection(self, img1_list, img2_list, CC_feat_list = None):
         feat_num = len(img1_list)
         img_fus_list = []
-        # fisrtly aug the single-temporal last features by semantic Transformer neck
+        # 먼저 semantic Transformer neck으로 단일 시점의 마지막 특징을 보강합니다.
         feat_1_last = img1_list[-1]
         feat_2_last = img2_list[-1]
         b, n, h, w = feat_1_last.size()
@@ -463,9 +463,9 @@ class AttentiveEncoder(nn.Module):
         feat_2_last = feat_2_last.transpose(-1, 1).view(b, n, h, w)
         img1_list[-1] = feat_1_last
         img2_list[-1] = feat_2_last
-        # secondly fuse bi-temporal features in every level
+        # 이후 각 레벨에서 두 시점 특징을 융합합니다.
         for k in range(feat_num):
-            # method 1
+            # 방법 1
             dif = self.conv_dif[k](img2_list[k] - img1_list[k]) + self.cos(img1_list[k], img2_list[k]).unsqueeze(1)
             fus = torch.cat([img1_list[k], dif, img2_list[k]], dim=1)
             fus = self.conv_fuse[k](fus)
@@ -477,7 +477,7 @@ class AttentiveEncoder(nn.Module):
             img_fus = self.to_fused[i](img_fus)
             up = img_fus
             # img_fus_list.append(img_fus)
-        # fused = torch.cat(img_fus_list, dim=1) # 换成Unet那种？
+        # fused = torch.cat(img_fus_list, dim=1) # UNet 방식으로 바꿀 수 있는지 검토
         seg = self.to_seg(img_fus)
         return seg
 
@@ -491,7 +491,7 @@ class AttentiveEncoder(nn.Module):
         feat_1_last = feat_1_last.transpose(-1, 1).view(b, c, h, w)
         feat_2_last = feat_2_last.transpose(-1, 1).view(b, c, h, w)
 
-        # prepare feat for detection branch
+        # 탐지 branch용 특징 준비
         feat = []
         feat.append(feat_1_last)
         feat.append(feat_2_last)
@@ -511,7 +511,7 @@ class AttentiveEncoder(nn.Module):
         img1_list[-1] = feat_1_last
         img2_list[-1] = feat_2_last
 
-        # prepare CD branch feat for caption branch
+        # 캡션 branch에 사용할 CD branch 특징 준비
         feat = []
         feat.append(img1_list[-1])
         feat.append(img2_list[-1])
@@ -519,43 +519,43 @@ class AttentiveEncoder(nn.Module):
         return img1_list, img2_list, feat
 
     def forward(self, img1_list, img2_list):
-        # 1. get A B feature from backbone
+        # 1. 백본에서 A/B 특징 추출
         CD_img1_list, CD_img2_list = img1_list[:4], img2_list[:4]
         CC_img1_feat, CC_img2_feat = img1_list[-1], img2_list[-1]
-        # 2.1 neck-stage 0 for detection:
+        # 2.1 탐지를 위한 neck-stage 0
         CD_img1_list, CD_img2_list, _ = self.CD_neck_s0(CD_img1_list, CD_img2_list)
-        # 2.2 neck-stage 0 for captioning
+        # 2.2 캡션을 위한 neck-stage 0
         CC_img1_feat, CC_img2_feat, _ = self.CC_neck_s0(CC_img1_feat, CC_img2_feat)
 
-        # captioning
+        # 캡션 생성
         img1_cap, img2_cap, CC_feat_list = self.prepare_caption(CC_img1_feat, CC_img2_feat, None)
-        # detection
+        # 탐지
         seg = self.change_detection(CD_img1_list, CD_img2_list, None)
 
         return img1_cap, img2_cap, seg
 
     def fine_tune(self, goal, fine_tune=True):
         """
-        :param fine_tune: Allow?
+        :param fine_tune: 미세 조정 허용 여부
         0: no fine-tune
-        1: fine-tune the captioning related modules
+        1: 캡션 관련 모듈을 미세 조정합니다.
         """
         assert goal in [0, 1]
         for p in self.parameters():
             p.requires_grad = False
-        if goal == 1: # fine-tune the captioning module
+        if goal == 1: # 캡션 모듈 미세 조정
             for m in self.cap_modules_list:
                 m.train()
                 for p in m.parameters():
                     p.requires_grad = True
-            # # Set CD related modules to eval()
+            # CD 관련 모듈을 평가 모드로 설정
             for m in self.CD_modules_list:
                 m.eval()
-        elif goal ==0: # fine-tune the detection module
+        elif goal ==0: # 탐지 모듈 미세 조정
             for m in self.CD_modules_list:
                 m.train()
                 for p in m.parameters():
                     p.requires_grad = True
-            # Set captioning related modules to eval()
+            # 캡션 관련 모듈을 평가 모드로 설정
             for m in self.cap_modules_list:
                 m.eval()

@@ -1,6 +1,6 @@
 import sys
 
-# 添加特定路径到 Python 解释器的搜索路径中
+# Python 인터프리터 검색 경로에 특정 경로 추가
 sys.path.append('/data/coding/Change_Agent/Multi_change')
 import os.path
 
@@ -17,9 +17,9 @@ from utils_tool.utils import *
 from imageio.v2 import imread
 
 
-# compute_change_map(path_A, path_B)函数: 生成一个掩膜mask用来表示两个图像之间的变化区域
+# compute_change_map(path_A, path_B) 함수: 두 이미지 사이의 변화 영역을 나타내는 마스크를 생성합니다.
 '''
-Args:
+인자:
     path_A: 图像A的路径
     path_B: 图像B的路径
 Returns:
@@ -31,15 +31,15 @@ Returns:
 #     img_A = cv2.imread(path_A)
 #     img_B = cv2.imread(path_B)
 #     change_map = (img_B-img_A).astype(np.uint8)
-#     # 阈值化
+#     # 임계값 처리
 #     change_map = cv2.cvtColor(change_map, cv2.COLOR_BGR2GRAY)
 #     change_map = cv2.threshold(change_map, 0, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)[1]
 #     cv2.imwrite('E:\change_map.png', change_map)
 #     return 'I have save the changed mask in E:\change_map.png'
 
-# compute_change_caption(path_A, path_B)函数：生成一个文本用于描述两个图像之间变化
+# compute_change_caption(path_A, path_B) 함수: 두 이미지 사이의 변화를 설명하는 텍스트를 생성합니다.
 '''
-Args:
+인자:
     path_A: 图像A的路径
     path_B: 图像B的路径
 Returns:
@@ -61,13 +61,13 @@ class Change_Perception(object):
         parser.add_argument('--vocab_file', default='vocab', help='path of the data lists')
         parser.add_argument('--max_length', type=int, default=41, help='path of the data lists')
 
-        # inference
+        # 추론 설정
         parser.add_argument('--gpu_id', type=int, default=0, help='gpu id in the training.')
         parser.add_argument('--checkpoint', default='/data/coding/Change_Agent/Multi_change/models_ckpt/MCI_model.pth',help='path to checkpoint')
         parser.add_argument('--result_path', default="/data/coding/dataset_extra",
                             help='path to save the result of masks and captions')
 
-        # backbone parameters
+        # 백본 파라미터
         parser.add_argument('--network', default='segformer-mit_b1',
                             help='define the backbone encoder to extract features')
         parser.add_argument('--encoder_dim', type=int, default=512,
@@ -75,9 +75,9 @@ class Change_Perception(object):
         parser.add_argument('--feat_size', type=int, default=16,
                             help='define the output size of encoder to extract features')
         parser.add_argument('--dropout', type=float, default=0.1, help='dropout')
-        # Model parameters
+        # 모델 파라미터
         parser.add_argument('--n_heads', type=int, default=8, help='Multi-head attention in Transformer.')
-        parser.add_argument('--n_layers', type=int, default=3, help='Number of layers in AttentionEncoder.')
+        parser.add_argument('--n_layers', type=int, default=3, help='Number of layers in Attention인코더입니다.')
         parser.add_argument('--decoder_n_layers', type=int, default=1)
         parser.add_argument('--feature_dim', type=int, default=512, help='embedding dimension')
 
@@ -89,7 +89,7 @@ class Change_Perception(object):
 
     def __init__(self,):
         """
-        Training and validation.
+        학습과 검증을 수행합니다.
         """
         args = self.define_args()
         self.mean = [0.39073 * 255, 0.38623 * 255, 0.32989 * 255]
@@ -97,7 +97,7 @@ class Change_Perception(object):
 
         with open(os.path.join(args.list_path + args.vocab_file + '.json'), 'r') as f:
             self.word_vocab = json.load(f)
-        # Load checkpoint
+        # 체크포인트 로드
         snapshot_full_path = args.checkpoint
 
         checkpoint = torch.load(snapshot_full_path)
@@ -113,7 +113,7 @@ class Change_Perception(object):
         self.encoder.load_state_dict(checkpoint['encoder_dict'])
         self.encoder_trans.load_state_dict(checkpoint['encoder_trans_dict'], strict=False)
         self.decoder.load_state_dict(checkpoint['decoder_dict'])
-        # Move to GPU, if available
+        # 사용 가능하면 GPU로 이동
         self.encoder.eval()
         self.encoder = self.encoder.cuda()
         self.encoder_trans.eval()
@@ -149,9 +149,9 @@ class Change_Perception(object):
         return imgA, imgB
 
     def generate_change_caption(self, path_A, path_B):
-        #print('model_infer_change_captioning: start')
+        #print('변화 캡션 추론 시작')
         imgA, imgB = self.preprocess(path_A, path_B)
-        # Move to GPU, if available
+        # 사용 가능하면 GPU로 이동
         imgA = imgA.cuda()
         imgB = imgB.cuda()
         feat1, feat2 = self.encoder(imgA, imgB)
@@ -164,36 +164,36 @@ class Change_Perception(object):
 
         caption ='there is road change'
         caption = pred_caption
-        #print('change captioning:', caption)
+        #print('변화 캡션 결과:', caption)
         return caption
 
     def change_detection(self, path_A, path_B, savepath_mask):
-        #print('model_infer_change_detection: start')
+        #print('변화 탐지 추론 시작')
         imgA, imgB = self.preprocess(path_A, path_B)
-        # Move to GPU, if available
+        # 사용 가능하면 GPU로 이동
         imgA = imgA.cuda()
         imgB = imgB.cuda()
         feat1, feat2 = self.encoder(imgA, imgB)
         feat1, feat2, seg_pre = self.encoder_trans(feat1, feat2)
-        # for segmentation
+        # 세그멘테이션 처리
         pred_seg = seg_pre.data.cpu().numpy()
         pred_seg = np.argmax(pred_seg, axis=1)
-        # 保存图片
+        # 이미지 저장
         pred = pred_seg[0].astype(np.uint8)
         pred_rgb = np.zeros((pred.shape[0], pred.shape[1], 3), dtype=np.uint8)
         pred_rgb[pred == 1] = [0, 255, 255]
         pred_rgb[pred == 2] = [0, 0, 255]
 
         cv2.imwrite(savepath_mask, pred_rgb)
-        #print('model_infer: mask saved in', savepath_mask)
+        #print('마스크 저장 위치:', savepath_mask)
 
-        #print('model_infer_change_detection: end')
+        #print('변화 탐지 추론 종료')
         return pred # (256,256,3)
-        # return 'change detection successfully. '
+        # return '변화 탐지 성공.'
 
     def compute_object_num(self, changed_mask, object):
         print("compute num start")
-        # compute the number of connected components
+        # 연결 성분 개수 계산
         mask = changed_mask
         mask_cp = 0 * mask.copy()
         if object == 'road':
@@ -202,14 +202,14 @@ class Change_Perception(object):
             mask_cp[mask == 2] = 255
         lbl = measure.label(mask_cp, connectivity=2)
         props = measure.regionprops(lbl)
-        # get bboxes by a for loop
+        # 반복문으로 bounding box 추출
         bboxes = []
         for prop in props:
             # print('Found bbox', prop.bbox, 'area:', prop.area)
             if prop.area > 5:
                 bboxes.append([prop.bbox[1], prop.bbox[0], prop.bbox[3], prop.bbox[2]])
         num = len(bboxes)
-        # visual
+        # 시각화
         # mask_array_copy = mask.copy()*255
         # for bbox in bboxes:
         #     print('Found bbox', bbox)
@@ -224,7 +224,7 @@ class Change_Perception(object):
         num_str = 'Found ' + str(num) + ' changed ' + object
         return num_str
 
-    # design more tool functions:
+    # 추가 도구 함수 설계:
 
 
 if __name__ == '__main__':

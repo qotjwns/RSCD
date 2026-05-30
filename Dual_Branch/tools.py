@@ -1,5 +1,5 @@
 
-# 然后直接导入文件中的函数
+# 파일 안의 함수를 직접 import합니다.
 from predict import Change_Perception
 
 if __name__ == '__main__':

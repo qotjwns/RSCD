@@ -13,7 +13,7 @@ from utils_tool.metrics import Evaluator
 class Trainer(object):
     def __init__(self, args):
         """
-        Training and validation.
+        학습과 검증을 수행합니다.
         """
         self.start_train_goal = args.train_goal
         self.args = args
@@ -31,20 +31,20 @@ class Trainer(object):
         print_log('=>num_epochs: {}'.format(args.num_epochs), self.log)
         print_log('=>train_batchsize: {}'.format(args.train_batchsize), self.log)
 
-        self.best_bleu4 = 0.4  # BLEU-4 score right now
+        self.best_bleu4 = 0.4  # 현재 BLEU-4 점수
         self.MIou = 0.4
         self.Sum_Metric = 0.4
         self.start_epoch = 0
         with open(os.path.join(args.list_path + args.vocab_file + '.json'), 'r') as f:
             self.word_vocab = json.load(f)
-        # Initialize / load checkpoint
+        # 모델 초기화 또는 체크포인트 로드
         self.build_model()
 
-        # Loss function
+        # 손실 함수
         self.criterion_cap = torch.nn.CrossEntropyLoss().cuda()
         self.criterion_det = torch.nn.CrossEntropyLoss().cuda()
 
-        # Custom dataloaders
+        # 사용자 정의 데이터 로더
         if args.data_name == 'LEVIR_MCI':
             self.train_loader = data.DataLoader(
                 LEVIRCCDataset(args.data_folder, args.list_path, 'train', args.token_folder, args.vocab_file, args.max_length, args.allow_unk),
@@ -55,7 +55,7 @@ class Trainer(object):
 
         self.index_i = 0
         self.hist = np.zeros((args.num_epochs*2 * len(self.train_loader), 5))
-        # Epochs
+        # 에폭 설정
 
         self.evaluator = Evaluator(num_class=3)
 
@@ -84,21 +84,21 @@ class Trainer(object):
             self.decoder.load_state_dict(checkpoint['decoder_dict'])
             self.encoder_trans.load_state_dict(checkpoint['encoder_trans_dict'], strict=False)
             self.encoder.load_state_dict(checkpoint['encoder_dict'])
-            # eval()
+            # 평가 모드로 전환
             self.encoder.eval()
             self.encoder_trans.eval()
             self.decoder.eval()
-            # 各个modules 是否需要微调
+            # 각 모듈을 미세 조정할지 설정
             args.fine_tune_encoder = False
             self.encoder.fine_tune(args.fine_tune_encoder)
             self.encoder_trans.fine_tune(args.train_goal)
             fine_tune_capdecoder = False if args.train_goal == 0 else True
             self.decoder.fine_tune(fine_tune_capdecoder)
         else:
-            # print('Error: checkpoint is None or stage=s1.')
+            # print('오류: checkpoint가 None이거나 stage가 s1입니다.')
             raise ValueError('Error: checkpoint is None.')
 
-        # set optimizer
+        # 옵티마이저 설정
         self.encoder_optimizer = torch.optim.Adam(params=self.encoder.parameters(),
                                                   lr=args.encoder_lr) if args.fine_tune_encoder else None
         self.encoder_trans_optimizer = torch.optim.Adam(
@@ -108,7 +108,7 @@ class Trainer(object):
             params=filter(lambda p: p.requires_grad, self.decoder.parameters()),
             lr=args.decoder_lr) if fine_tune_capdecoder else None
 
-        # Move to GPU, if available
+        # 사용 가능하면 GPU로 이동
         self.encoder = self.encoder.cuda()
         self.encoder_trans = self.encoder_trans.cuda()
         self.decoder = self.decoder.cuda()
@@ -123,12 +123,12 @@ class Trainer(object):
         if self.start_train_goal !=2:
             self.encoder.train()
             self.encoder_trans.train()
-            self.decoder.train()  # train mode (dropout and batchnorm is used)
+            self.decoder.train()  # 학습 모드로 설정합니다(dropout과 batchnorm 사용).
         else:
             if self.args.train_goal == 2:
                 self.encoder.train()
                 self.encoder_trans.train()
-                self.decoder.train()  # train mode (dropout and batchnorm is used)
+                self.decoder.train()  # 학습 모드로 설정합니다(dropout과 batchnorm 사용).
             elif self.args.train_goal == 1:
                 self.encoder.eval()
                 self.encoder_trans.fine_tune(self.args.train_goal)
@@ -143,28 +143,34 @@ class Trainer(object):
         self.encoder_trans_optimizer.zero_grad()
         if self.encoder_optimizer is not None:
             self.encoder_optimizer.zero_grad()
-        for id, (imgA, imgB, seg_label, _, _, token, token_len, _) in enumerate(self.train_loader):
+        train_bar = tqdm(
+            self.train_loader,
+            desc=f'train_epoch_{epoch}_goal_{self.args.train_goal}',
+            total=len(self.train_loader),
+            dynamic_ncols=True
+        )
+        for id, (imgA, imgB, seg_label, _, _, token, token_len, _) in enumerate(train_bar):
             # if id == 120:
             #    break
             start_time = time.time()
             accum_steps = 64//args.train_batchsize
 
-            # Move to GPU, if available
+            # 사용 가능하면 GPU로 이동
             imgA = imgA.cuda()
             imgB = imgB.cuda()
             seg_label = seg_label.cuda()
             token = token.squeeze(1).cuda()
             token_len = token_len.cuda()
-            # Forward prop.
+            # 순전파 수행
             feat1, feat2 = self.encoder(imgA, imgB)
             feat1, feat2, seg_pre = self.encoder_trans(feat1, feat2)
             if self.args.train_goal != 0:
                 scores, caps_sorted, decode_lengths, sort_ind = self.decoder(feat1, feat2, token, token_len)
-                # Since we decoded starting with <start>, the targets are all words after <start>, up to <end>
+                # <start>부터 디코딩하므로 target은 <start> 뒤부터 <end>까지의 토큰입니다.
                 targets = caps_sorted[:, 1:]
                 scores = pack_padded_sequence(scores, decode_lengths, batch_first=True).data
                 targets = pack_padded_sequence(targets, decode_lengths, batch_first=True).data
-                # Calculate loss
+                # 손실 계산
                 cap_loss = self.criterion_cap(scores, targets.to(torch.int64))
             det_loss = self.criterion_det(seg_pre, seg_label.to(torch.int64))
             if self.args.train_goal == 0:
@@ -177,22 +183,22 @@ class Trainer(object):
                 #     cap_loss = cap_loss / cap_loss.detach().item()
                 loss = cap_loss
             else:
-                # balance two losses
+                # 두 손실의 스케일을 맞춤
                 if args.train_stage == 's1':
                     det_loss = det_loss / det_loss.detach().item() #* cap_loss.detach().item()
                     cap_loss = cap_loss / cap_loss.detach().item()
                 loss = det_loss + cap_loss
-            # Back prop.
+            # 역전파 수행
             loss = loss / accum_steps
             loss.backward()
-            # Clip gradients
+            # 그래디언트 클리핑
             if args.grad_clip is not None:
                 torch.nn.utils.clip_grad_value_(self.decoder.parameters(), args.grad_clip)
                 torch.nn.utils.clip_grad_value_(self.encoder_trans.parameters(), args.grad_clip)
                 if self.encoder_optimizer is not None:
                     torch.nn.utils.clip_grad_value_(self.encoder.parameters(), args.grad_clip)
 
-            # Update weights
+            # 가중치 업데이트
             if (id + 1) % accum_steps == 0 or (id + 1) == len(self.train_loader):
                 if self.decoder_optimizer is not None:
                     self.decoder_optimizer.step()
@@ -201,7 +207,7 @@ class Trainer(object):
                     # if epoch >10:
                     self.encoder_optimizer.step()
 
-                # Adjust learning rate
+                # 학습률 스케줄러 업데이트
                 if self.decoder_lr_scheduler is not None:
                     self.decoder_lr_scheduler.step()
                 # print(decoder_optimizer.param_groups[0]['lr'])
@@ -217,18 +223,24 @@ class Trainer(object):
                 if self.encoder_optimizer is not None:
                     self.encoder_optimizer.zero_grad()
 
-            # Keep track of metrics
-            self.hist[self.index_i, 0] = time.time() - start_time #batch_time
+            # 지표 기록
+            self.hist[self.index_i, 0] = time.time() - start_time #배치 처리 시간
             if self.args.train_goal == 0 or self.args.train_goal == 2:
-                self.hist[self.index_i, 1] = det_loss.item() #train_loss
+                self.hist[self.index_i, 1] = det_loss.item() #학습 손실
                 self.hist[self.index_i, 2] = accuracy(seg_pre.permute(0, 2, 3, 1).reshape(-1, seg_pre.size(1)),
                                                       seg_label.reshape(-1), 1)
             if self.args.train_goal == 1 or self.args.train_goal == 2:
-                self.hist[self.index_i, 3] = cap_loss.item()  # train_loss
-                self.hist[self.index_i, 4] = accuracy(scores, targets, 5) #top5
+                self.hist[self.index_i, 3] = cap_loss.item()  # 학습 손실
+                self.hist[self.index_i, 4] = accuracy(scores, targets, 5) #Top-5 정확도
+
+            train_bar.set_postfix({
+                'loss': f'{loss.item() * accum_steps:.4f}',
+                'det': f'{det_loss.item():.4f}' if self.args.train_goal in [0, 2] else '--',
+                'cap': f'{cap_loss.item():.4f}' if self.args.train_goal in [1, 2] else '--'
+            })
 
             self.index_i += 1
-            # Print status
+            # 학습 상태 출력
             if self.index_i % args.print_freq == 0:
                 print_log('Training Epoch: [{0}][{1}/{2}]\t'
                     'Batch Time: {3:.3f}\t'
@@ -244,46 +256,46 @@ class Trainer(object):
                                         np.mean(self.hist[self.index_i-args.print_freq:self.index_i-1,4])
                                 ), self.log)
 
-    # One epoch's validation
+    # 한 에폭 검증
     def validation(self, epoch):
         word_vocab = self.word_vocab
-        self.decoder.eval()  # eval mode (no dropout or batchnorm)
+        self.decoder.eval()  # 평가 모드(dropout과 batchnorm 비활성)
         self.encoder_trans.eval()
         if self.encoder is not None:
             self.encoder.eval()
 
         val_start_time = time.time()
-        references = list()  # references (true captions) for calculating BLEU-4 score
-        hypotheses = list()  # hypotheses (predictions)
+        references = list()  # BLEU-4 계산용 정답 캡션
+        hypotheses = list()  # 모델 예측 캡션
 
         self.evaluator.reset()
         with torch.no_grad():
-            # Batches
+            # 배치 반복
             for ind, (imgA, imgB, seg_label, token_all, token_all_len, _, _, _) in enumerate(
                     tqdm(self.val_loader, desc='val_' + "EVALUATING AT BEAM SIZE " + str(1))):
-                # Move to GPU, if available
+                # 사용 가능하면 GPU로 이동
                 imgA = imgA.cuda()
                 imgB = imgB.cuda()
                 token_all = token_all.squeeze(0).cuda()
-                # Forward prop.
+                # 순전파 수행
                 if self.encoder is not None:
                     feat1, feat2 = self.encoder(imgA, imgB)
                 feat1, feat2, seg_pre = self.encoder_trans(feat1, feat2)
                 if self.args.train_goal != 0 or self.start_train_goal == 2:
                     seq = self.decoder.sample(feat1, feat2, k=1)
 
-                # for segmentation
+                # 세그멘테이션 처리
                 if self.args.train_goal != 1  or self.start_train_goal == 2:
                     pred_seg = seg_pre.data.cpu().numpy()
                     seg_label = seg_label.cpu().numpy()
                     pred_seg = np.argmax(pred_seg, axis=1)
-                    # Add batch sample into evaluator
+                    # 현재 배치를 평가기에 추가
                     self.evaluator.add_batch(seg_label, pred_seg)
-                # for captioning
+                # 캡션 평가
                 if self.args.train_goal != 0 or self.start_train_goal == 2:
                     img_token = token_all.tolist()
                     img_tokens = list(map(lambda c: [w for w in c if w not in {word_vocab['<START>'], word_vocab['<END>'], word_vocab['<NULL>']}],
-                            img_token))  # remove <start> and pads
+                            img_token))  # <start>와 padding 토큰 제거
                     references.append(img_tokens)
 
                     pred_seq = [w for w in seq if w not in {word_vocab['<START>'], word_vocab['<END>'], word_vocab['<NULL>']}]
@@ -301,19 +313,19 @@ class Trainer(object):
                                 ref_caption += (list(word_vocab.keys())[j]) + " "
                             ref_caption += ".    "
             val_time = time.time() - val_start_time
-            # Fast test during the training
-            # for segmentation
+            # 학습 중 빠른 검증
+            # 세그멘테이션 처리
             if self.args.train_goal != 1 or self.start_train_goal == 2:
                 Acc_seg = self.evaluator.Pixel_Accuracy()
                 Acc_class_seg = self.evaluator.Pixel_Accuracy_Class()
                 mIoU_seg, IoU = self.evaluator.Mean_Intersection_over_Union()
                 FWIoU_seg = self.evaluator.Frequency_Weighted_Intersection_over_Union()
                 print_log(
-                    '\nDetection_Validation:\n' 'Acc_seg: {0:.5f}\t' 'Acc_class_seg: {1:.5f}\t' 'mIoU_seg: {2:.5f}\t' 'FWIoU_seg: {3:.5f}\t '
+                    '\nDetection_검증 설정:\n' 'Acc_seg: {0:.5f}\t' 'Acc_class_seg: {1:.5f}\t' 'mIoU_seg: {2:.5f}\t' 'FWIoU_seg: {3:.5f}\t '
                     .format(Acc_seg, Acc_class_seg, mIoU_seg, FWIoU_seg), self.log)
                 print_log('Iou: {}'.format(IoU), self.log)
 
-            # Calculate evaluation scores
+            # 평가 점수 계산
             if self.args.train_goal != 0 or self.start_train_goal == 2:
                 score_dict = get_eval_score(references, hypotheses)
                 Bleu_1 = score_dict['Bleu_1']
@@ -323,11 +335,11 @@ class Trainer(object):
                 Meteor = score_dict['METEOR']
                 Rouge = score_dict['ROUGE_L']
                 Cider = score_dict['CIDEr']
-                print_log('Captioning_Validation:\n' 'Time: {0:.3f}\t' 'BLEU-1: {1:.5f}\t' 'BLEU-2: {2:.5f}\t' 'BLEU-3: {3:.5f}\t' 
+                print_log('Captioning_검증 설정:\n' 'Time: {0:.3f}\t' 'BLEU-1: {1:.5f}\t' 'BLEU-2: {2:.5f}\t' 'BLEU-3: {3:.5f}\t' 
                     'BLEU-4: {4:.5f}\t' 'Meteor: {5:.5f}\t' 'Rouge: {6:.5f}\t' 'Cider: {7:.5f}\t'
                     .format(val_time, Bleu_1, Bleu_2, Bleu_3, Bleu_4, Meteor, Rouge, Cider), self.log)
 
-        # Check if there was an improvement
+        # 성능 개선 여부 확인
         if self.start_train_goal != 2:
             if self.args.train_goal == 0:
                 Bleu_4 = 0
@@ -337,7 +349,7 @@ class Trainer(object):
                 self.best_bleu4 = max(Bleu_4, self.best_bleu4)
                 self.MIou = max(mIoU_seg, self.MIou)
                 self.Sum_Metric = max(Bleu_4 + mIoU_seg, self.Sum_Metric)
-                # save_checkpoint
+                # 체크포인트 저장
                 print('Save Model')
                 state = {'encoder_dict': self.encoder.state_dict(),
                          'encoder_trans_dict': self.encoder_trans.state_dict(),
@@ -347,14 +359,14 @@ class Trainer(object):
                 model_name = f'{args.data_name}_bts_{args.train_batchsize}_{args.network}_epo_{epoch}_{metric}.pth'
                 if epoch > 10:
                     torch.save(state, os.path.join(args.savepath, model_name))
-        # if True:
+        # 항상 실행하던 조건
         elif self.start_train_goal == 2:
             Sum_Metric = mIoU_seg + Bleu_4
-            if (self.args.train_goal == 2 and Sum_Metric >= self.Sum_Metric) or (self.args.train_goal==1 and Bleu_4 >= self.best_bleu4) or (self.args.train_goal==0 and mIoU_seg > self.MIou):#or Bleu_4+mIoU_seg > self.Sum_Metric
+            if (self.args.train_goal == 2 and Sum_Metric >= self.Sum_Metric) or (self.args.train_goal==1 and Bleu_4 >= self.best_bleu4) or (self.args.train_goal==0 and mIoU_seg > self.MIou):#또는 Bleu_4+mIoU_seg가 self.Sum_Metric보다 큰 경우
                 self.best_bleu4 = max(Bleu_4, self.best_bleu4) if self.args.train_goal == 1 else Bleu_4
                 self.MIou = max(mIoU_seg, self.MIou) if self.args.train_goal == 0 else mIoU_seg
                 self.Sum_Metric = max(Sum_Metric, self.Sum_Metric) if self.args.train_goal == 2 else Sum_Metric
-                #save_checkpoint
+                # 체크포인트 저장
                 print('Save Model')
                 state = {'encoder_dict': self.encoder.state_dict(),
                         'encoder_trans_dict': self.encoder_trans.state_dict(),
@@ -373,9 +385,9 @@ class Trainer(object):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Remote_Sensing_Image_Change_Interpretation')
 
-    # Data parameters
+    # 데이터 파라미터
     parser.add_argument('--sys', default='win', help='system win or linux')
-    parser.add_argument('--data_folder', default='D:\Dataset\Caption\change_caption\Levir-MCI-dataset\images',help='folder with data files')
+    parser.add_argument('--data_folder', default='/workspace/ChangeVG/data/coding/datasets/LEVIR-MCI-dataset/images', help='folder with data files')
     parser.add_argument('--list_path', default='./data/LEVIR_MCI/', help='path of the data lists')
     parser.add_argument('--token_folder', default='./data/LEVIR_MCI/tokens/', help='folder with token files')
     parser.add_argument('--vocab_file', default='vocab', help='path of the data lists')
@@ -386,7 +398,7 @@ if __name__ == '__main__':
     parser.add_argument('--gpu_id', type=int, default=0, help='gpu id in the training.')
     parser.add_argument('--checkpoint', default=None, help='path to checkpoint from stage s1, assert not None when train_stage=s2')
     parser.add_argument('--print_freq', type=int, default=100, help='print training/validation stats every __ batches')
-    # Training parameters
+    # 학습 파라미터
     parser.add_argument('--train_goal', type=int, default=2, help='0:det; 1:cap; 2:two tasks')
     parser.add_argument('--train_stage', default='s1', help='s1: pretrain backbone under two loss;'
                                                                          ' s2: train two branch respectively')
@@ -398,18 +410,18 @@ if __name__ == '__main__':
     parser.add_argument('--decoder_lr', type=float, default=1e-4, help='learning rate for decoder.')
     parser.add_argument('--grad_clip', type=float, default=None, help='clip gradients at an absolute value of.')
     parser.add_argument('--dropout', type=float, default=0.1, help='dropout')
-    # Validation
+    # 검증 설정
     parser.add_argument('--val_batchsize', type=int, default=1, help='batch_size for validation')
     parser.add_argument('--savepath', default="./models_ckpt/")
-    # backbone parameters
+    # 백본 파라미터
     parser.add_argument('--network', default='segformer-mit_b1', help='define the backbone encoder to extract features')
     parser.add_argument('--encoder_dim', type=int, default=512,
                         help='the dimension of extracted features using backbone ')
     parser.add_argument('--feat_size', type=int, default=16,
                         help='define the output size of encoder to extract features')
-    # Model parameters
+    # 모델 파라미터
     parser.add_argument('--n_heads', type=int, default=8, help='Multi-head attention in Transformer.')
-    parser.add_argument('--n_layers', type=int, default=3, help='Number of layers in AttentionEncoder.')
+    parser.add_argument('--n_layers', type=int, default=3, help='Number of layers in Attention인코더입니다.')
     parser.add_argument('--decoder_n_layers', type=int, default=1)
     parser.add_argument('--feature_dim', type=int, default=512, help='embedding dimension')
     args = parser.parse_args()
@@ -419,7 +431,7 @@ if __name__ == '__main__':
     print('Total Epoches:', trainer.args.num_epochs)
 
     if args.train_goal == 2:
-        # First train both together, then train only change captioning, and finally train only change detection
+        # 먼저 두 작업을 함께 학습하고, 이후 변화 캡션과 변화 탐지를 순서대로 미세 조정합니다.
         for goal in [2, 1, 0]:
             print_log(f'Current train_goal={goal}:\n', trainer.log)
             trainer.args.train_goal = goal

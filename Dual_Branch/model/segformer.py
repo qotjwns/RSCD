@@ -1,8 +1,17 @@
 import os
 
-from mmseg.utils import get_root_logger
-from mmcv.runner import load_checkpoint
+import logging
 from functools import partial
+
+
+def get_root_logger():
+    return logging.getLogger(__name__)
+
+
+def load_checkpoint(model, filename, map_location='cpu', strict=False, logger=None):
+    checkpoint = torch.load(filename, map_location=map_location)
+    state_dict = checkpoint.get('state_dict', checkpoint) if isinstance(checkpoint, dict) else checkpoint
+    return model.load_state_dict(state_dict, strict=strict)
 from timm.models.layers import DropPath, to_2tuple, trunc_normal_
 import math
 import torch
@@ -118,7 +127,7 @@ class Block(nn.Module):
             dim,
             num_heads=num_heads, qkv_bias=qkv_bias, qk_scale=qk_scale,
             attn_drop=attn_drop, proj_drop=drop, sr_ratio=sr_ratio)
-        # NOTE: drop path for stochastic depth, we shall see if this is better than dropout here
+        # 참고: stochastic depth를 위한 drop path이며, dropout보다 나은지 확인합니다.
         self.drop_path = DropPath(drop_path) if drop_path > 0. else nn.Identity()
         self.norm2 = norm_layer(dim)
         mlp_hidden_dim = int(dim * mlp_ratio)
@@ -149,7 +158,7 @@ class Block(nn.Module):
 
 
 class OverlapPatchEmbed(nn.Module):
-    """ Image to Patch Embedding
+    """ 이미지를 패치 임베딩으로 변환
     """
 
     def __init__(self, img_size=224, patch_size=7, stride=4, in_chans=3, embed_dim=768):
@@ -200,7 +209,7 @@ class MixVisionTransformer(nn.Module):
         self.num_classes = num_classes
         self.depths = depths
 
-        # patch_embed
+        # 패치 임베딩
         self.patch_embed1 = OverlapPatchEmbed(img_size=img_size, patch_size=7, stride=4, in_chans=in_chans,
                                               embed_dim=embed_dims[0])
         self.patch_embed2 = OverlapPatchEmbed(img_size=img_size // 4, patch_size=3, stride=2, in_chans=embed_dims[0],
@@ -210,8 +219,8 @@ class MixVisionTransformer(nn.Module):
         self.patch_embed4 = OverlapPatchEmbed(img_size=img_size // 16, patch_size=3, stride=2, in_chans=embed_dims[2],
                                               embed_dim=embed_dims[3])
 
-        # transformer encoder
-        dpr = [x.item() for x in torch.linspace(0, drop_path_rate, sum(depths))]  # stochastic depth decay rule
+        # Transformer 인코더
+        dpr = [x.item() for x in torch.linspace(0, drop_path_rate, sum(depths))]  # stochastic depth 감소 규칙
         cur = 0
         self.block1 = nn.ModuleList([Block(
             dim=embed_dims[0], num_heads=num_heads[0], mlp_ratio=mlp_ratios[0], qkv_bias=qkv_bias, qk_scale=qk_scale,
@@ -244,7 +253,7 @@ class MixVisionTransformer(nn.Module):
             for i in range(depths[3])])
         self.norm4 = norm_layer(embed_dims[3])
 
-        # classification head
+        # 분류 head
         # self.head = nn.Linear(embed_dims[3], num_classes) if num_classes > 0 else nn.Identity()
 
         self.apply(self._init_weights)
@@ -292,7 +301,7 @@ class MixVisionTransformer(nn.Module):
 
     @torch.jit.ignore
     def no_weight_decay(self):
-        return {'pos_embed1', 'pos_embed2', 'pos_embed3', 'pos_embed4', 'cls_token'}  # has pos_embed may be better
+        return {'pos_embed1', 'pos_embed2', 'pos_embed3', 'pos_embed4', 'cls_token'}  # pos_embed가 있으면 더 나을 수 있습니다.
 
     def get_classifier(self):
         return self.head
@@ -305,7 +314,7 @@ class MixVisionTransformer(nn.Module):
         B = x.shape[0]
         outs = []
 
-        # stage 1
+        # 1단계
         x, H, W = self.patch_embed1(x)
         for i, blk in enumerate(self.block1):
             x = blk(x, H, W)
@@ -313,7 +322,7 @@ class MixVisionTransformer(nn.Module):
         x = x.reshape(B, H, W, -1).permute(0, 3, 1, 2).contiguous()
         outs.append(x)
 
-        # stage 2
+        # 2단계
         x, H, W = self.patch_embed2(x)
         for i, blk in enumerate(self.block2):
             x = blk(x, H, W)
@@ -321,7 +330,7 @@ class MixVisionTransformer(nn.Module):
         x = x.reshape(B, H, W, -1).permute(0, 3, 1, 2).contiguous()
         outs.append(x)
 
-        # stage 3
+        # 3단계
         x, H, W = self.patch_embed3(x)
         for i, blk in enumerate(self.block3):
             x = blk(x, H, W)
@@ -339,10 +348,10 @@ class MixVisionTransformer(nn.Module):
         return x
 
     def forward_features(self, x):
-        # stage 1 2 3
+        # 1, 2, 3단계
         outs, x = self.stage_123(x)
 
-        # stage 4
+        # 4단계
         x_4 = self.stage_4(x)
         # outs.append(x)
 
@@ -422,42 +431,34 @@ class Segformer_baseline(nn.Module):
 
         script_path = os.path.abspath(__file__)
         script_dir = os.path.dirname(script_path)
-        # print(script_dir)
+        backbone_builders = {
+            "mit_b0": mit_b0,
+            "mit_b1": mit_b1,
+            "mit_b2": mit_b2,
+            "mit_b3": mit_b3,
+            "mit_b4": mit_b4,
+            "mit_b5": mit_b5,
+        }
+        if backbone not in backbone_builders:
+            raise ValueError(f"Unsupported SegFormer backbone: {backbone}")
 
-        if backbone == "mit_b0":
-            self.segformer = mit_b0()
-            self.ckpt = torch.load(rf"{script_dir}/pretrained/mit_b0.pth")
-            self.segformer.load_state_dict(self.ckpt, False)
-        elif backbone == "mit_b1":
-            self.segformer = mit_b1()
-            # try:
-            #     self.ckpt = torch.load(r"F:/LCY/Multi_change/model/pretrained/mit_b1.pth")
-            # except:
-            self.ckpt = torch.load(rf"{script_dir}/pretrained/mit_b1.pth")
-            self.segformer.load_state_dict(self.ckpt, False)
-        elif backbone == "mit_b2":
-            self.segformer = mit_b2()
-            self.ckpt = torch.load(rf"{script_dir}/pretrained/mit_b2.pth")
-            self.segformer.load_state_dict(self.ckpt, False)
-        elif backbone == "mit_b3":
-            self.segformer = mit_b3()
-            self.ckpt = torch.load(rf"{script_dir}/pretrained/mit_b3.pth")
-            self.segformer.load_state_dict(self.ckpt, False)
-        elif backbone == "mit_b4":
-            self.segformer = mit_b4()
-            self.ckpt = torch.load(rf"{script_dir}/pretrained/mit_b4.pth")
-            self.segformer.load_state_dict(self.ckpt, False)
-        elif backbone == "mit_b5":
-            self.segformer = mit_b5()
-            self.ckpt = torch.load(rf"{script_dir}/pretrained/mit_b5.pth")
-            self.segformer.load_state_dict(self.ckpt, False)
+        self.segformer = backbone_builders[backbone]()
+        self.ckpt = None
+        ckpt_path = os.path.join(script_dir, "pretrained", f"{backbone}.pth")
+        if os.path.exists(ckpt_path):
+            ckpt = torch.load(ckpt_path, map_location="cpu")
+            if isinstance(ckpt, dict) and "state_dict" in ckpt:
+                ckpt = ckpt["state_dict"]
+            ckpt.pop("head.weight", None)
+            ckpt.pop("head.bias", None)
+            self.segformer.load_state_dict(ckpt, strict=False)
+            self.ckpt = ckpt
+        else:
+            print(
+                f"Warning: pretrained SegFormer checkpoint not found: {ckpt_path}. "
+                f"Training {backbone} from scratch."
+            )
 
-
-
-
-
-        self.ckpt.pop("head.weight")
-        self.ckpt.pop("head.bias")
 
     def forward(self, x1, x2):
         diff_list = []
@@ -475,8 +476,8 @@ class Segformer_baseline(nn.Module):
         # diff_list.append(diff2)
         # diff_list.append(diff3)
         #
-        # segmap_small = self.head(diff_list) #[batch, 64, 64, 64] ->2 64 64
-        # segmap_orign = F.interpolate(segmap_small, size=(256, 256), mode='bilinear', align_corners=False)
+        # 작은 세그멘테이션 맵 생성 #[batch, 64, 64, 64] ->2 64 64
+        # 원본 크기로 세그멘테이션 맵 보간
 
         return x1, x2
 

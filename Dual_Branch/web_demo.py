@@ -15,7 +15,7 @@ os.environ["https_proxy"] = "http://localhost:7890"
 class SessionState:
 
     def init_state(self):
-        """Initialize session state variables."""
+        """세션 상태 변수를 초기화합니다."""
         st.session_state['assistant'] = []
         st.session_state['user'] = []
         st.session_state['history'] = []
@@ -30,7 +30,7 @@ class SessionState:
         st.session_state['plugin_actions'] = set()
 
     def clear_state(self):
-        """Clear the existing session state."""
+        """기존 세션 상태를 초기화합니다."""
         st.session_state['assistant'] = []
         st.session_state['user'] = []
         st.session_state['history'] = []
@@ -46,7 +46,7 @@ class StreamlitUI:
         self.session_state = session_state
 
     def init_streamlit(self):
-        """Initialize Streamlit's UI settings."""
+        """Streamlit UI 설정을 초기화합니다."""
         st.set_page_config(
             layout='wide',
             page_title='RSAgent-web',
@@ -56,7 +56,7 @@ class StreamlitUI:
         st.sidebar.title('Configuration')
 
     def setup_sidebar(self):
-        """Setup the sidebar for model and plugin selection."""
+        """모델과 플러그인 선택을 위한 사이드바를 설정합니다."""
         model_name = st.sidebar.selectbox(
             '**Language Model Selection:**', options=['gpt-3.5-turbo', 'internlm'])
         if model_name != st.session_state['model_selected']:
@@ -90,7 +90,7 @@ class StreamlitUI:
         return model_name, model, plugin_action, uploaded_file_A, uploaded_file_B
 
     def init_model(self, option):
-        """Initialize the model based on the selected option."""
+        """선택한 옵션에 따라 모델을 초기화합니다."""
         if option not in st.session_state['model_map']:
             if option.startswith('gpt'):
                 st.session_state['model_map'][option] = GPTAPI(
@@ -101,7 +101,7 @@ class StreamlitUI:
         return st.session_state['model_map'][option]
 
     def initialize_chatbot(self, model, plugin_action):
-        """Initialize the chatbot with the given model and plugin actions."""
+        """지정한 모델과 플러그인 액션으로 챗봇을 초기화합니다."""
         return ReAct(
             llm=model, action_executor=ActionExecutor(actions=plugin_action))
 
@@ -134,8 +134,8 @@ class StreamlitUI:
             self.render_action_results(action)
 
     def render_action_results(self, action):
-        """Render the results of action, including text, images, videos, and
-        audios."""
+        """텍스트, 이미지, 비디오 등을 포함한 액션 결과를 렌더링합니다.
+        오디오 결과도 렌더링합니다."""
         if (isinstance(action.result, dict)):
             st.markdown(
                 "<p style='text-align: left;display:flex;'><span style='font-size:14px;font-weight:600;width:70px;text-align-last: justify;'> 执行结果</span><span style='width:14px;text-align:left;display:block;'>:</span></p>",  # noqa E501
@@ -161,7 +161,7 @@ class StreamlitUI:
 
 def main():
     logger = get_logger(__name__)
-    # Initialize Streamlit UI and setup sidebar
+    # Streamlit UI를 초기화하고 사이드바를 설정
     if 'ui' not in st.session_state:
         session_state = SessionState()
         session_state.init_state()
@@ -176,8 +176,8 @@ def main():
     model_name, model, plugin_action, uploaded_file_A, uploaded_file_B = st.session_state[
         'ui'].setup_sidebar()
 
-    # Initialize chatbot if it is not already initialized
-    # or if the model has changed
+    # 챗봇이 아직 초기화되지 않았다면 초기화
+    # 또는 모델이 변경된 경우 초기화
     if 'chatbot' not in st.session_state or model != st.session_state[
             'chatbot']._llm:
         st.session_state['chatbot'] = st.session_state[
@@ -187,23 +187,23 @@ def main():
                                     st.session_state['assistant']):
         st.session_state['ui'].render_user(prompt)
         st.session_state['ui'].render_assistant(agent_return)
-    # User input form at the bottom (this part will be at the bottom)
+    # 하단 사용자 입력 폼
     # with st.form(key='my_form', clear_on_submit=True):
 
     if user_input := st.chat_input(''):
         st.session_state['ui'].render_user(user_input)
         st.session_state['user'].append(user_input)
-        # Add file uploader to sidebar
+        # 사이드바에 파일 업로더 추가
         if uploaded_file_B:
             file_bytes_B = uploaded_file_B.read()
             file_type_B = uploaded_file_B.type
             if 'image' in file_type_B:
                 st.image(file_bytes_B, caption='Uploaded Image_B')#, use_column_width=False, width=300
             # elif 'video' in file_type_B:
-            #     st.video(file_bytes_B, caption='Uploaded Video')
+            #     st.video(file_bytes_B, caption='업로드된 비디오')
             # elif 'audio' in file_type_B:
-            #     st.audio(file_bytes_B, caption='Uploaded Audio')
-            # Save the file to a temporary location and get the path
+            #     st.audio(file_bytes_B, caption='업로드된 오디오')
+            # 파일을 임시 위치에 저장하고 경로를 가져옵니다.
             file_path_B = os.path.join(root_dir, uploaded_file_B.name)
             with open(file_path_B, 'wb') as tmpfile:
                 tmpfile.write(file_bytes_B)
@@ -216,10 +216,10 @@ def main():
             if 'image' in file_type_A:
                 st.image(file_bytes_A, caption='Uploaded Image_A') #, use_column_width=False, width=300
             # elif 'video' in file_type_A:
-            #     st.video(file_bytes_A, caption='Uploaded Video')
+            #     st.video(file_bytes_A, caption='업로드된 비디오')
             # elif 'audio' in file_type_A:
-            #     st.audio(file_bytes_A, caption='Uploaded Audio')
-            # Save the file to a temporary location and get the path
+            #     st.audio(file_bytes_A, caption='업로드된 오디오')
+            # 파일을 임시 위치에 저장하고 경로를 가져옵니다.
             file_path_A = os.path.join(root_dir, uploaded_file_A.name)
             with open(file_path_A, 'wb') as tmpfile:
                 tmpfile.write(file_bytes_A)

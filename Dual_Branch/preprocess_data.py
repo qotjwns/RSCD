@@ -34,13 +34,13 @@ def main(args):
     if args.dataset == 'LEVIR_MCI':
         with open(input_captions_json, 'r') as f:
             data = json.load(f)
-        # Read image paths and captions for each image
+        # 각 이미지의 경로와 캡션을 읽습니다.
         max_length = -1
         all_cap_tokens = []
         for img in data['images']:
             captions = []    
             for c in img['sentences']:
-                # Update word frequency
+                # 단어 빈도 갱신
                 assert len(c['raw']) > 0, 'error: some image has no caption'
                 captions.append(c['raw'])
             tokens_list = []
@@ -54,7 +54,7 @@ def main(args):
                 max_length = max(max_length, len(cap_tokens))
             all_cap_tokens.append((img['filename'], tokens_list))
 
-        # Then save the tokenized captions in txt
+        # 토큰화된 캡션을 txt 파일로 저장
         print('Saving captions')
         for img, tokens_list in all_cap_tokens:
             i = img.split('.')[0]
@@ -65,9 +65,9 @@ def main(args):
             f.close()
 
 
-        #Considering each image pair has 5 annotations, two strategies can be adopted to generate list for training:
-        # a: creating training list with a self-defined token_id[0:4], each token list corresponds to specific captions;
-        # or b: randomly select one of the five captions during training;
+        #각 이미지 쌍에 5개의 주석이 있으므로 학습 목록 생성에 두 가지 전략을 사용할 수 있습니다.
+        # a: token_id[0:4]를 직접 지정해 각 토큰 목록이 특정 캡션에 대응하도록 학습 목록을 생성합니다.
+        # b: 학습 중 5개 캡션 중 하나를 무작위로 선택합니다.
           
             if i.split('_')[0] == 'train':
                f = open(os.path.join(save_dir + 'train' + '.txt'), 'a')
@@ -90,7 +90,7 @@ def main(args):
                 f.close()
 
     print('max_length of the dataset:', max_length)
-    # Either create the vocab or load it from disk
+    # 어휘 사전을 새로 만들거나 디스크에서 불러옵니다.
     if input_vocab_json == '':
         print('Building vocab')
         word_freq = build_vocab(all_cap_tokens, args.word_count_threshold)
@@ -106,9 +106,9 @@ def main(args):
 def tokenize(s, delim=' ',add_start_token=True, 
     add_end_token=True, punct_to_keep=None, punct_to_remove=None):
     """
-    Tokenize a sequence, converting a string s into a list of (string) tokens by
-    splitting on the specified delimiter. Optionally keep or remove certain
-    punctuation marks and add start and end tokens.
+    문자열 s를 문자열 토큰 목록으로 변환합니다. by
+    지정한 구분자로 나누며, 필요하면 특정 문장부호를 유지하거나 제거할 수 있습니다.
+    시작/종료 토큰을 추가할 수도 있습니다.
     """
     if punct_to_keep is not None:
         for p in punct_to_keep:
@@ -132,7 +132,7 @@ def tokenize(s, delim=' ',add_start_token=True,
         tokens.append('<END>')
     return tokens
 
-def build_vocab(sequences, min_token_count=1):#Calculate the number of independent words and tokenize vocab
+def build_vocab(sequences, min_token_count=1):#고유 단어 수를 계산하고 어휘 사전을 토큰화합니다.
     token_to_count = {}
     for it in sequences:
         for seq in it[1]:

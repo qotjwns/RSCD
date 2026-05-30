@@ -7,10 +7,10 @@ import os
 # os.environ["http_proxy"] = "http://127.0.0.1:7890"
 # os.environ["https_proxy"] = "http://127.0.0.1:7890"
 
-llm = GPTAPI(model_type='gpt-3.5-turbo', key='xxxxx') # KEY from openai
+llm = GPTAPI(model_type='gpt-3.5-turbo', key='xxxxx') # OpenAI 키
 # llm = HFTransformer(r'internlm/internlm-chat-7b-v1_1')
 # llm = HFTransformerCasualLM(r'internlm/internlm-chat-7b-v1_1')
-search_tool = GoogleSearch(api_key='xxxx') # key from google search
+search_tool = GoogleSearch(api_key='xxxx') # Google Search 키
 python_interpreter = PythonInterpreter()
 imgchange_python_interpreter = Visual_Change_Process_PythonInterpreter()
 

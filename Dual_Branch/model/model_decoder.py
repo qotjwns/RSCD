@@ -10,7 +10,7 @@ from torch.nn import functional as F
 
 class resblock(nn.Module):
     '''
-    module: Residual Block
+    module: 잔차 블록
     '''
     def __init__(self, inchannel, outchannel, stride=1, shortcut=None):
         super(resblock, self).__init__()
@@ -51,9 +51,9 @@ class PositionalEncoding(nn.Module):
 
         self.embedding_1D = nn.Embedding(52, int(d_model))
     def forward(self, x):
-        # fixed
+        # 고정 위치 인코딩
         x = x + self.pe[:x.size(0), :]
-        # learnable
+        # 학습 가능한 위치 인코딩
         # x = x + self.embedding_1D(torch.arange(52).cuda()).unsqueeze(1).repeat(1,x.size(1),  1)
         return self.dropout(x)
 
@@ -67,7 +67,7 @@ class Mesh_TransformerDecoderLayer(nn.Module):
         super(Mesh_TransformerDecoderLayer, self).__init__()
         self.self_attn = nn.MultiheadAttention(d_model, nhead, dropout=dropout)
         self.multihead_attn = nn.MultiheadAttention(int(d_model), nhead, dropout=dropout)
-        # Implementation of Feedforward model
+        # Feedforward 모델 구현
         self.linear1 = nn.Linear(d_model, dim_feedforward)
         self.dropout = nn.Dropout(dropout)
         self.linear2 = nn.Linear(dim_feedforward, d_model)
@@ -103,7 +103,7 @@ class Mesh_TransformerDecoderLayer(nn.Module):
                 tgt_key_padding_mask: Optional[Tensor] = None, memory_key_padding_mask: Optional[Tensor] = None) -> Tensor:
 
         self_att_tgt = self.norm1(tgt + self._sa_block(tgt, tgt_mask, tgt_key_padding_mask))
-        # # cross self-attention
+        # # 교차 self-attention
         enc_att, att_weight = self._mha_block(self_att_tgt,
                                                memory, memory_mask,
                                                memory_key_padding_mask)
@@ -113,7 +113,7 @@ class Mesh_TransformerDecoderLayer(nn.Module):
         return x + tgt
         #return x
 
-    # self-attention block
+    # self-attention 블록
     def _sa_block(self, x: Tensor,
                   attn_mask: Optional[Tensor], key_padding_mask: Optional[Tensor]) -> Tensor:
         x = self.self_attn(x, x, x,
@@ -122,7 +122,7 @@ class Mesh_TransformerDecoderLayer(nn.Module):
                            need_weights=False)[0]
         return self.dropout1(x)
  
-    # multihead attention block
+    # multi-head attention 블록
     def _mha_block(self, x: Tensor, mem: Tensor,
                    attn_mask: Optional[Tensor], key_padding_mask: Optional[Tensor]) -> Tensor:
         x, att_weight = self.multihead_attn(x, mem, mem,
@@ -131,13 +131,13 @@ class Mesh_TransformerDecoderLayer(nn.Module):
                                 need_weights=True)
         return self.dropout2(x),  att_weight
 
-    # feed forward block
+    # feed-forward 블록
     def _ff_block(self, x: Tensor) -> Tensor:
         x = self.linear2(self.dropout(self.activation(self.linear1(x))))
         return self.dropout3(x)
 
 class StackTransformer(nn.Module):
-    r"""StackTransformer is a stack of N decoder layers
+    r"""StackTransformer는 N개의 디코더 계층을 쌓은 모듈입니다.
 
     """
     __constants__ = ['norm']
@@ -151,18 +151,18 @@ class StackTransformer(nn.Module):
     def forward(self, tgt: Tensor, memory: Tensor, tgt_mask: Optional[Tensor] = None,
                 memory_mask: Optional[Tensor] = None, tgt_key_padding_mask: Optional[Tensor] = None,
                 memory_key_padding_mask: Optional[Tensor] = None) -> Tensor:
-        r"""Pass the inputs (and mask) through the decoder layer in turn.
+        r"""입력과 마스크를 디코더 계층에 순서대로 통과시킵니다.
 
-        Args:
-            tgt: the sequence to the decoder (required).
-            memory: the sequence from the last layer of the encoder (required).
-            tgt_mask: the mask for the tgt sequence (optional).
-            memory_mask: the mask for the memory sequence (optional).
-            tgt_key_padding_mask: the mask for the tgt keys per batch (optional).
-            memory_key_padding_mask: the mask for the memory keys per batch (optional).
+        인자:
+            tgt: 디코더에 입력되는 시퀀스(필수).
+            memory: 인코더 마지막 계층에서 나온 시퀀스(필수).
+            tgt_mask: tgt 시퀀스용 마스크(선택).
+            memory_mask: memory 시퀀스용 마스크(선택).
+            tgt_key_padding_mask: 배치별 tgt key padding 마스크(선택).
+            memory_key_padding_mask: 배치별 memory key padding 마스크(선택).
 
-        Shape:
-            see the docs in Transformer class.
+        형상:
+            Transformer 클래스 문서를 참고하세요.
         """
         output = tgt
 
@@ -179,13 +179,13 @@ class StackTransformer(nn.Module):
 
 class DecoderTransformer(nn.Module):
     """
-    Decoder with Transformer.
+    Transformer 기반 디코더입니다.
     """
 
     def __init__(self, encoder_dim, feature_dim, vocab_size, max_lengths, word_vocab, n_head, n_layers, dropout):
         """
-        :param n_head: the number of heads in Transformer
-        :param n_layers: the number of layers of Transformer
+        :param n_head: Transformer head 개수
+        :param n_layers: Transformer 계층 수
         """
         super(DecoderTransformer, self).__init__()
 
@@ -200,23 +200,23 @@ class DecoderTransformer(nn.Module):
         self.dropout = dropout
         self.Conv1 = nn.Conv2d(encoder_dim*2, feature_dim, kernel_size = 1)
         self.LN = resblock(feature_dim, feature_dim)
-        # embedding layer
-        self.vocab_embedding = nn.Embedding(vocab_size, self.embed_dim)  # vocaburaly embedding
-        # Transformer layer
+        # 임베딩 계층
+        self.vocab_embedding = nn.Embedding(vocab_size, self.embed_dim)  # 어휘 임베딩
+        # Transformer 계층
         decoder_layer = Mesh_TransformerDecoderLayer(feature_dim, n_head, dim_feedforward=feature_dim * 4,
                                                    dropout=self.dropout)
         self.transformer = StackTransformer(decoder_layer, n_layers)
         self.position_encoding = PositionalEncoding(feature_dim, max_len=max_lengths)
 
-        # Linear layer to find scores over vocabulary
+        # 어휘별 점수를 계산하는 linear 계층
         self.wdc = nn.Linear(feature_dim, vocab_size)
         self.dropout = nn.Dropout(p=self.dropout)
         self.cos = torch.nn.CosineSimilarity(dim=1)
-        self.init_weights()  # initialize some layers with the uniform distribution
+        self.init_weights()  # 일부 계층을 균등분포로 초기화
 
     def init_weights(self):
         """
-        Initializes some parameters with values from the uniform distribution, for easier convergence
+        더 쉬운 수렴을 위해 일부 파라미터를 균등분포 값으로 초기화합니다.
         """
         self.vocab_embedding.weight.data.uniform_(-0.1, 0.1)
 
@@ -225,9 +225,9 @@ class DecoderTransformer(nn.Module):
 
     def forward(self, x1, x2, encoded_captions, caption_lengths):
         """
-        :param x1, x2: encoded images, a tensor of dimension (batch_size, channel, enc_image_size, enc_image_size)
-        :param encoded_captions: a tensor of dimension (batch_size, max_caption_length)
-        :param caption_lengths: a tensor of dimension (batch_size)
+        :param x1, x2: (batch_size, channel, enc_image_size, enc_image_size) 형태의 인코딩된 이미지 특징
+        :param encoded_captions: (batch_size, max_caption_length) 형태의 캡션 텐서
+        :param caption_lengths: (batch_size) 형태의 캡션 길이 텐서
         """
         x_sam = self.cos(x1, x2)
         x = torch.cat([x1, x2], dim = 1) #+ x_sam.unsqueeze(1) #(batch_size, 2channel, enc_image_size, enc_image_size)
@@ -250,7 +250,7 @@ class DecoderTransformer(nn.Module):
         pred = self.wdc(self.dropout(pred))  # (length, batch, vocab_size)
         pred = pred.permute(1, 0, 2)
 
-        # Sort input data by decreasing lengths
+        # 길이가 긴 순서대로 입력 데이터를 정렬
         caption_lengths, sort_ind = caption_lengths.sort(dim=0, descending=True)
         encoded_captions = encoded_captions[sort_ind]
         pred = pred[sort_ind]
@@ -261,7 +261,7 @@ class DecoderTransformer(nn.Module):
 
     def sample(self, x1, x2, k=1):
         """
-        :param x1, x2: encoded images, a tensor of dimension (batch_size, channel, enc_image_size, enc_image_size)
+        :param x1, x2: (batch_size, channel, enc_image_size, enc_image_size) 형태의 인코딩된 이미지 특징
         """
         x_sam = self.cos(x1, x2)
         x = torch.cat([x1, x2], dim = 1) #+ x_sam.unsqueeze(1) #(batch_size, 2channel, enc_image_size, enc_image_size)
@@ -292,7 +292,7 @@ class DecoderTransformer(nn.Module):
             #Weight = torch.cat([Weight, weight], dim = 0)
             if predicted_id == self.word_vocab['<END>']:
                 break
-            if step<(self.max_lengths-1):#except <END> node
+            if step<(self.max_lengths-1):# <END> 토큰 제외
                 tgt[:, step+1] = predicted_id
         seqs = seqs.squeeze(0)
         seqs = seqs.tolist()
@@ -304,9 +304,9 @@ class DecoderTransformer(nn.Module):
 
     def sample_beam(self, x1, x2, k=1):
         """
-        :param x1, x2: encoded images, a tensor of dimension (batch_size, channel, enc_image_size, enc_image_size)
-        :param max_lengths: maximum length of the generated captions
-        :param k: beam_size
+        :param x1, x2: (batch_size, channel, enc_image_size, enc_image_size) 형태의 인코딩된 이미지 특징
+        :param max_lengths: 생성 캡션의 최대 길이
+        :param k: beam size
         """
 
         x = torch.cat([x1, x2], dim = 1)
@@ -340,20 +340,20 @@ class DecoderTransformer(nn.Module):
             else:
                 top_k_scores, top_k_words = scores.view(-1).topk(k, 0, True, True)  # (s)
 
-            # Convert unrolled indices to actual indices of scores
+            # 펼쳐진 인덱스를 실제 score 인덱스로 변환
             # prev_word_inds = top_k_words // vocab_size  # (s)
             prev_word_inds = torch.div(top_k_words, self.vocab_size, rounding_mode='floor')
             next_word_inds = top_k_words % self.vocab_size  # (s)
-            # Add new words to sequences
+            # 시퀀스에 새 단어 추가
             seqs = torch.cat([seqs[prev_word_inds], next_word_inds.unsqueeze(1)], dim = 1)
-            # Which sequences are incomplete (didn't reach <end>)?
+            # <end>에 도달하지 않은 미완성 시퀀스 확인
             incomplete_inds = [ind for ind, next_word in enumerate(next_word_inds) if
                                next_word != self.word_vocab['<END>']]
             complete_inds = list(set(range(len(next_word_inds))) - set(incomplete_inds))
             if len(complete_inds) > 0:
                 complete_seqs.extend(seqs[complete_inds].tolist())
                 complete_seqs_scores.extend(top_k_scores[complete_inds])
-            k -= len(complete_inds)  # reduce beam length accordingly
+            k -= len(complete_inds)  # 완료된 시퀀스 수만큼 beam 길이 감소
             if k == 0:
                 break
             seqs = seqs[incomplete_inds]

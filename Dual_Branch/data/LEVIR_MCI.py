@@ -12,19 +12,19 @@ from random import *
 
 class LEVIRCCDataset(Dataset):
     """
-    A PyTorch Dataset class to be used in a PyTorch DataLoader to create batches.
+    PyTorch DataLoader에서 배치를 만들 때 사용하는 Dataset 클래스입니다.
     """
 
     def __init__(self, data_folder, list_path, split, token_folder = None, vocab_file = None, max_length = 41, allow_unk = 0, max_iters=None):
         """
-        :param data_folder: folder where image files are stored
-        :param list_path: folder where the file name-lists of Train/val/test.txt sets are stored
-        :param split: split, one of 'TRAIN', 'VAL', or 'TEST'
-        :param token_folder: folder where token files are stored
-        :param vocab_file: the name of vocab file
-        :param max_length: the maximum length of each caption sentence
-        :param max_iters: the maximum iteration when loading the data
-        :param allow_unk: whether to allow the tokens have unknow word or not
+        :param data_folder: 이미지 파일이 저장된 폴더
+        :param list_path: train/val/test.txt 파일 목록이 저장된 폴더
+        :param split: train, val, test 중 하나의 데이터 분할
+        :param token_folder: 토큰 파일이 저장된 폴더
+        :param vocab_file: 어휘 사전 파일 이름
+        :param max_length: 각 캡션 문장의 최대 길이
+        :param max_iters: 데이터 로딩 시 최대 반복 횟수
+        :param allow_unk: 토큰에 미등록 단어를 허용할지 여부
         """
         self.mean = [0.39073*255,  0.38623*255, 0.32989*255]
         self.std = [0.15329*255,  0.14628*255, 0.13648*255]

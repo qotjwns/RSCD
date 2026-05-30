@@ -13,7 +13,7 @@ class Evaluator(object):
     def Pixel_Accuracy_Class(self):
         Acc = np.diag(self.confusion_matrix) / self.confusion_matrix.sum(axis=1)
         # print("Precision(CPA):", Acc)
-        Acc = np.nanmean(Acc) # MPA
+        Acc = np.nanmean(Acc) # 평균 픽셀 정확도(MPA)
         return Acc
 
     def Recall_Class(self):
