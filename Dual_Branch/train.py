@@ -18,7 +18,7 @@ class Trainer(object):
         self.start_train_goal = args.train_goal
         self.args = args
         random_str = str(random.randint(10, 100))
-        name = 'baseline_'+time_file_str() + f'_train_goal_{args.train_goal}_' + random_str
+        name = 'baseline_'+time_file_str() + f'_{args.data_variant}_train_goal_{args.train_goal}_' + random_str
         self.args.savepath = os.path.join(args.savepath, name)
         self.args.savepath = os.path.join(args.savepath, name)
         if os.path.exists(self.args.savepath)==False:
@@ -30,6 +30,8 @@ class Trainer(object):
         print_log('=>decoder_lr: {}'.format(args.decoder_lr), self.log)
         print_log('=>num_epochs: {}'.format(args.num_epochs), self.log)
         print_log('=>train_batchsize: {}'.format(args.train_batchsize), self.log)
+        print_log('=>data_folder: {}'.format(args.data_folder), self.log)
+        print_log('=>data_variant: {}'.format(args.data_variant), self.log)
 
         self.best_bleu4 = 0.4  # 현재 BLEU-4 점수
         self.MIou = 0.4
@@ -359,9 +361,11 @@ class Trainer(object):
                          'decoder_dict': self.decoder.state_dict()
                          }
                 metric = f'Sum_{round(100000 * self.Sum_Metric)}_MIou_{round(100000 * self.MIou)}_Bleu4_{round(100000 * self.best_bleu4)}'
-                model_name = f'{args.data_name}_bts_{args.train_batchsize}_{args.network}_epo_{epoch}_{metric}.pth'
+                model_name = f'{self.args.data_name}_{self.args.data_variant}_bts_{self.args.train_batchsize}_{self.args.network}_epo_{epoch}_{metric}.pth'
                 if epoch > 10:
-                    torch.save(state, os.path.join(args.savepath, model_name))
+                    torch.save(state, os.path.join(self.args.savepath, model_name))
+                    alias_name = 'Dual_Branch_FFT.pth' if self.args.use_fft else 'Dual_Branch.pth'
+                    torch.save(state, os.path.join(self.args.savepath, alias_name))
         # 항상 실행하던 조건
         elif self.start_train_goal == 2:
             Sum_Metric = mIoU_seg + Bleu_4
@@ -377,10 +381,12 @@ class Trainer(object):
                         }
                 metric = f'Sum_{round(100000*self.Sum_Metric)}_MIou_{round(100000*self.MIou)}_Bleu4_{round(100000*self.best_bleu4)}'
                 # metric = f'MIou_{round(10000 * self.MIou)}_Bleu4_{round(10000 * self.best_bleu4)}'
-                model_name = f'{self.args.data_name}_bts_{self.args.train_batchsize}_{self.args.network}_epo_{epoch}_{metric}.pth'
+                model_name = f'{self.args.data_name}_{self.args.data_variant}_bts_{self.args.train_batchsize}_{self.args.network}_epo_{epoch}_{metric}.pth'
                 best_model_path = os.path.join(self.args.savepath, model_name)
                 if epoch>10:
                     torch.save(state, best_model_path)
+                    alias_name = 'Dual_Branch_FFT.pth' if self.args.use_fft else 'Dual_Branch.pth'
+                    torch.save(state, os.path.join(self.args.savepath, alias_name))
                 self.best_epoch = epoch
                 self.best_model_path = best_model_path
 
@@ -389,10 +395,13 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Remote_Sensing_Image_Change_Interpretation')
 
     # 데이터 파라미터
+    default_data_folder = './data/coding/datasets/LEVIR-MCI-dataset/images'
+    fft_data_folder = './data/coding/datasets/LEVIR-MCI-dataset-fft/images'
     parser.add_argument('--sys', default='win', help='system win or linux')
-    parser.add_argument('--data_folder', default='/workspace/ChangeVG/data/coding/datasets/LEVIR-MCI-dataset/images', help='folder with data files')
-    parser.add_argument('--list_path', default='./data/LEVIR_MCI/', help='path of the data lists')
-    parser.add_argument('--token_folder', default='./data/LEVIR_MCI/tokens/', help='folder with token files')
+    parser.add_argument('--data_folder', default=default_data_folder, help='folder with data files')
+    parser.add_argument('--use_fft', action='store_true', help='use FFT-suppressed image dataset')
+    parser.add_argument('--list_path', default='./Dual_Branch/data/LEVIR_MCI/', help='path of the data lists')
+    parser.add_argument('--token_folder', default='./Dual_Branch/data/LEVIR_MCI/tokens/', help='folder with token files')
     parser.add_argument('--vocab_file', default='vocab', help='path of the data lists')
     parser.add_argument('--max_length', type=int, default=41, help='path of the data lists')
     parser.add_argument('--allow_unk', type=int, default=1, help='if unknown token is allowed')
@@ -428,6 +437,9 @@ if __name__ == '__main__':
     parser.add_argument('--decoder_n_layers', type=int, default=1)
     parser.add_argument('--feature_dim', type=int, default=512, help='embedding dimension')
     args = parser.parse_args()
+    if args.use_fft:
+        args.data_folder = fft_data_folder
+    args.data_variant = 'FFT' if args.use_fft else 'RGB'
 
     trainer = Trainer(args)
     print('Starting Epoch:', trainer.start_epoch)
