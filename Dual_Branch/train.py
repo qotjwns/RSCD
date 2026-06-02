@@ -54,8 +54,8 @@ class Trainer(object):
                 batch_size=args.val_batchsize, shuffle=False, num_workers=args.workers, pin_memory=True)
 
         self.index_i = 0
-        self.hist = np.zeros((args.num_epochs*2 * len(self.train_loader), 5))
-        # 에폭 설정
+        self.hist = np.zeros((args.num_epochs*2 * len(self.train_loader), 7))
+        # Epochs
 
         self.evaluator = Evaluator(num_class=3)
 
@@ -172,7 +172,9 @@ class Trainer(object):
                 targets = pack_padded_sequence(targets, decode_lengths, batch_first=True).data
                 # 손실 계산
                 cap_loss = self.criterion_cap(scores, targets.to(torch.int64))
+                raw_cap_loss = cap_loss.detach()
             det_loss = self.criterion_det(seg_pre, seg_label.to(torch.int64))
+            raw_det_loss = det_loss.detach()
             if self.args.train_goal == 0:
                 if self.start_train_goal==2:
                     if epoch < 100:
@@ -226,34 +228,35 @@ class Trainer(object):
             # 지표 기록
             self.hist[self.index_i, 0] = time.time() - start_time #배치 처리 시간
             if self.args.train_goal == 0 or self.args.train_goal == 2:
-                self.hist[self.index_i, 1] = det_loss.item() #학습 손실
-                self.hist[self.index_i, 2] = accuracy(seg_pre.permute(0, 2, 3, 1).reshape(-1, seg_pre.size(1)),
+                self.hist[self.index_i, 1] = raw_det_loss.item() # raw detection loss
+                self.hist[self.index_i, 2] = det_loss.item() # normalized detection loss
+                self.hist[self.index_i, 3] = accuracy(seg_pre.permute(0, 2, 3, 1).reshape(-1, seg_pre.size(1)),
                                                       seg_label.reshape(-1), 1)
             if self.args.train_goal == 1 or self.args.train_goal == 2:
-                self.hist[self.index_i, 3] = cap_loss.item()  # 학습 손실
-                self.hist[self.index_i, 4] = accuracy(scores, targets, 5) #Top-5 정확도
-
-            train_bar.set_postfix({
-                'loss': f'{loss.item() * accum_steps:.4f}',
-                'det': f'{det_loss.item():.4f}' if self.args.train_goal in [0, 2] else '--',
-                'cap': f'{cap_loss.item():.4f}' if self.args.train_goal in [1, 2] else '--'
-            })
+                self.hist[self.index_i, 4] = raw_cap_loss.item()  # raw caption loss
+                self.hist[self.index_i, 5] = cap_loss.item()  # normalized caption loss
+                self.hist[self.index_i, 6] = accuracy(scores, targets, 5) #top5
 
             self.index_i += 1
             # 학습 상태 출력
             if self.index_i % args.print_freq == 0:
+                hist_window = self.hist[self.index_i-args.print_freq:self.index_i]
                 print_log('Training Epoch: [{0}][{1}/{2}]\t'
                     'Batch Time: {3:.3f}\t'
-                    'Det_Loss: {4:.4f}\t'
-                    'Det Acc: {5:.3f}\t'
-                    'Cap_loss: {6:.5f}\t'
-                    'Text_Top-5 Acc: {7:.3f}'
+                    'Raw Det_Loss: {4:.4f}\t'
+                    'Norm Det_Loss: {5:.4f}\t'
+                    'Det Acc: {6:.3f}\t'
+                    'Raw Cap_loss: {7:.5f}\t'
+                    'Norm Cap_loss: {8:.5f}\t'
+                    'Text_Top-5 Acc: {9:.3f}'
                     .format(epoch, id, len(self.train_loader),
-                                        np.mean(self.hist[self.index_i-args.print_freq:self.index_i-1,0])*args.print_freq,
-                                        np.mean(self.hist[self.index_i-args.print_freq:self.index_i-1,1]),
-                                        np.mean(self.hist[self.index_i-args.print_freq:self.index_i-1,2]),
-                                         np.mean(self.hist[self.index_i-args.print_freq:self.index_i-1,3]),
-                                        np.mean(self.hist[self.index_i-args.print_freq:self.index_i-1,4])
+                                        np.mean(hist_window[:,0])*args.print_freq,
+                                        np.mean(hist_window[:,1]),
+                                        np.mean(hist_window[:,2]),
+                                        np.mean(hist_window[:,3]),
+                                        np.mean(hist_window[:,4]),
+                                        np.mean(hist_window[:,5]),
+                                        np.mean(hist_window[:,6])
                                 ), self.log)
 
     # 한 에폭 검증
