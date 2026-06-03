@@ -1,0 +1,22 @@
+Task,Metric,Paper Full ChangeVG,MCI_model_FFT (Ours)
+Binary,Accuracy,0.9460,0.9331
+,Precision,0.9549,0.9067
+,Recall,0.9401,0.9672
+,F1,0.9474,0.9360
+Counting,Road MAE,0.1560,0.3852
+,Build MAE,0.8020,0.6962
+Loc-Road,Example Acc,0.7865,0.9268
+,Micro P,0.7850,0.8909
+,Micro R,0.7595,0.9675
+,Micro F1,0.7720,0.9276
+,Subset Acc,0.7330,0.8849
+Loc-Build,Example Acc,0.8813,0.9052
+,Micro P,0.9068,0.9244
+,Micro R,0.9208,0.9546
+,Micro F1,0.9137,0.9393
+,Subset Acc,0.7220,0.8574
+Caption,Exact Match,-,0.5023
+,BLEU-1,-,0.8599
+,BLEU-2,-,0.7823
+,BLEU-3,-,0.7135
+,BLEU-4,-,0.6568

@@ -12,6 +12,7 @@ from model.model_encoder_att import Encoder, AttentiveEncoder
 from model.model_decoder import DecoderTransformer
 from utils_tool.utils import *
 from utils_tool.metrics import Evaluator
+from train_2 import LEVIRCCRGBFFTDataset, RGBFFTFusionEncoder
 
 GRID_LABELS = {
     (0, 0): "top left corner",
@@ -166,7 +167,7 @@ def main(args):
                 os.rmdir(os.path.join(root, name))
 
 
-    encoder = Encoder(args.network)
+    encoder = RGBFFTFusionEncoder(args.network)
     encoder_trans = AttentiveEncoder(train_stage=None, n_layers=args.n_layers,
                                           feature_size=[args.feat_size, args.feat_size, args.encoder_dim],
                                           heads=args.n_heads, dropout=args.dropout)
@@ -192,8 +193,8 @@ def main(args):
                          "the two scenes seem identical ", "no change has occurred ",
                          "almost nothing has changed "]
         test_loader = data.DataLoader(
-            LEVIRCCDataset(args.data_folder, args.list_path, 'test', args.token_folder, args.vocab_file,
-                           args.max_length, args.allow_unk),
+            LEVIRCCRGBFFTDataset(args.data_folder, args.fft_data_folder, args.list_path, 'test',
+                                 args.token_folder, args.vocab_file, args.max_length, args.allow_unk),
             batch_size=args.test_batchsize, shuffle=False, num_workers=args.workers, pin_memory=True)
 
     # 에폭 설정
@@ -209,16 +210,18 @@ def main(args):
     dual_prior_records = []
     evaluator = Evaluator(num_class=3)
     with torch.no_grad():
-        for ind, (imgA, imgB, seg_label, token_all, token_all_len, _, _, name) in enumerate(
+        for ind, (imgA, imgB, imgA_fft, imgB_fft, seg_label, token_all, token_all_len, _, _, name) in enumerate(
                 tqdm(test_loader, desc='test_' + " EVALUATING AT BEAM SIZE " + str(1))):
             # 사용 가능하면 GPU로 이동
             imgA = imgA.cuda()
             imgB = imgB.cuda()
+            imgA_fft = imgA_fft.cuda()
+            imgB_fft = imgB_fft.cuda()
             token_all = token_all.squeeze(0).cuda()
             # decode_lengths = max(token_all_len.squeeze(0)).item()
             # 순전파 수행
             if encoder is not None:
-                feat1, feat2 = encoder(imgA, imgB)
+                feat1, feat2 = encoder(imgA, imgB, imgA_fft, imgB_fft)
             feat1, feat2, seg_pre = encoder_trans(feat1, feat2)
             seq = decoder.sample(feat1, feat2, k=1)
 
@@ -334,13 +337,16 @@ def main(args):
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='Remote_Sensing_Image_Change_Interpretation')
+    parser = argparse.ArgumentParser(description='Remote_Sensing_Image_Change_Interpretation_FFT')
 
     # 데이터 파라미터
     parser.add_argument('--sys', default='win', help='system win or linux')
     parser.add_argument('--data_folder',
         default='../data/coding/datasets/LEVIR-MCI-dataset/images',
-        help='folder with image files')
+        help='folder with RGB image files')
+    parser.add_argument('--fft_data_folder',
+        default='../data/coding/datasets/LEVIR-MCI-dataset-fft/images',
+        help='folder with FFT image files')
     parser.add_argument('--list_path', default='./data/LEVIR_MCI/', help='path of the data lists')
     parser.add_argument('--token_folder', default='./data/LEVIR_MCI/tokens/', help='folder with token files')
     parser.add_argument('--vocab_file', default='vocab', help='path of the data lists')
@@ -350,9 +356,9 @@ if __name__ == '__main__':
 
     # 테스트 설정
     parser.add_argument('--gpu_id', type=int, default=0, help='gpu id in the training.')
-    parser.add_argument('--checkpoint', default='./models_ckpt/MCI_model.pth', help='path to checkpoint')
+    parser.add_argument('--checkpoint', default='./models_ckpt/MCI_model_FFT.pth', help='path to FFT checkpoint')
     parser.add_argument('--print_freq', type=int, default=100, help='print training/validation stats every __ batches')
-    parser.add_argument('--test_batchsize', default=1, help='batch_size for test')
+    parser.add_argument('--test_batchsize', type=int, default=1, help='batch_size for test')
     parser.add_argument('--workers', type=int, default=0, help='for data-loading')
     parser.add_argument('--dropout', type=float, default=0.1, help='dropout')
     # 마스크와 캡션을 저장할지 여부
