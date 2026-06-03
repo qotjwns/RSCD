@@ -2,7 +2,7 @@ torch
 torchvision
 transformers
 huggingface-hub
-timm>
+timm
 einops
 numpy
 opencv-python
@@ -13,3 +13,4 @@ pandas
 pyarrow
 tqdm
 pycocoevalcap
+gdown

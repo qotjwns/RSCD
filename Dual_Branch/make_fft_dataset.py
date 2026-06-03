@@ -17,7 +17,7 @@ IMAGE_FOLDERS = ("A", "B")
 LABEL_FOLDERS = ("label", "label_rgb")
 
 LOW_FREQ_SUPPRESS_RADIUS_RATIO = 0.08
-LOW_FREQ_SUPPRESS_STRENGTH = 0.7
+LOW_FREQ_SUPPRESS_STRENGTH = 1
 
 
 def read_names(split):
