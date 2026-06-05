@@ -16,3 +16,5 @@ pycocoevalcap
 gdown
 qwen-vl-utils
 accelerate
+peft
+safetensors

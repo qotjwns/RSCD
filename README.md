@@ -1,9 +1,5 @@
 # ChangeVG / RSCD
 
-Remote Sensing Change Understanding(RSCU)을 위한 프로젝트입니다. 두 시점의 원격탐사 이미지 `A/B`를 입력으로 받아 변화 마스크, 변화 설명 문장, 객체 수, 위치 정보를 생성하는 흐름을 다룹니다.
-
-현재 저장소는 크게 두 부분으로 나뉩니다.
-
 ```text
 1. Dual_Branch
    SegFormer-B1 기반 vision-guided module입니다.
@@ -13,19 +9,11 @@ Remote Sensing Change Understanding(RSCU)을 위한 프로젝트입니다. 두 �
    Dual_Branch가 만든 visual prior를 VLM prompt에 넣어 ChangeVG 추론/튜닝에 사용합니다.
 ```
 
-논문: `2509.23105v2.pdf`  
-arXiv: https://arxiv.org/abs/2509.23105
-
 ## Repository Layout
 
 ```text
 RSCD/
 ├── README.md
-├── demo.ipynb
-├── deal_data/
-│   └── deal_data.ipynb
-├── finetine_yaml/
-│   └── qwen2vl_lora_sft.yaml
 ├── infer/
 ├── data/
 │   └── coding/
@@ -42,6 +30,7 @@ RSCD/
     ├── download_segformer.py
     ├── make_fft_dataset.py
     ├── changevg_qwen_infer.py
+    ├── qwen_lora_single_image_infer.py
     ├── preprocess_data.py
     ├── requirement.txt
     ├── data/
@@ -62,6 +51,7 @@ Dual_Branch/
 ├── download_segformer.py     # nvidia/mit-b1 다운로드 및 key 변환
 ├── make_fft_dataset.py       # FFT-suppressed 데이터셋 생성
 ├── changevg_qwen_infer.py    # Dual_Branch visual prior + Qwen 추론
+├── qwen_lora_single_image_infer.py  # 단일 이미지 + Qwen LoRA adapter 추론
 ├── preprocess_data.py        # caption token/vocab 전처리
 ├── requirement.txt
 ├── data/
@@ -135,8 +125,6 @@ CUDA 사용 가능한 PyTorch 환경을 권장합니다. 현재 Dual_Branch 코�
 cd RSCD
 pip install -r Dual_Branch/requirement.txt
 ```
-
-주요 의존성은 `torch`, `torchvision`, `timm`, `einops`, `transformers`, `huggingface-hub`, `safetensors`, `opencv-python`, `imageio`, `scikit-image`, `pycocoevalcap`입니다.
 
 ## SegFormer-B1 Pretrained Weight
 
@@ -284,7 +272,7 @@ Dual_Branch_FFT.safetensors
   -> decoder_dict
 ```
 
-`adapter/`는 `test.py` / `test2.py`가 직접 사용하는 weight가 아니라 Qwen/VLM adapter 쪽 파일입니다.
+`adapter/`는 `test.py` / `test2.py`가 직접 사용하는 weight가 아니라 Qwen/VLM adapter 쪽 파일입니다. `changevg_qwen_infer.py --use_lora` 또는 `qwen_lora_single_image_infer.py`에서 base Qwen 위에 얹어 사용합니다.
 
 ## Token Usage
 
@@ -325,6 +313,83 @@ Dual_Branch는 다음 정보를 만듭니다.
 
 이 `dual_prior`는 `changevg_qwen_infer.py`에서 Qwen/VLM prompt에 넣는 visual prior로 사용할 수 있습니다.
 
+## ChangeVG Qwen Inference
+
+`changevg_qwen_infer.py`는 세 가지 축을 argument로 조합해서 실험합니다.
+
+```text
+1. Qwen 입력 모드
+   --mode qwen_only | guided_text | guided_full
+
+2. Dual_Branch 종류
+   --dual-mode rgb | rgb_fft
+
+3. Qwen LoRA 튜닝 여부
+   기본 Qwen: --use_lora를 주지 않음
+   LoRA Qwen: --use_lora --lora_adapter_path Dual_Branch/weights/adapter
+```
+
+모드별 의미는 다음과 같습니다.
+
+```text
+qwen_only
+  Qwen에 RGB A/B와 원본 ChangeIMTI instruction만 넣습니다.
+  Dual_Branch를 사용하지 않으므로 --dual-mode 값은 결과에 영향을 주지 않습니다.
+
+guided_text
+  Qwen에 RGB A/B를 넣고, prompt 앞에 Dual_Branch visual prior를 text로 붙입니다.
+  visual prior에는 caption, road/building count, road/building location이 들어갑니다.
+
+guided_full
+  guided_text와 같지만 Dual_Branch가 예측한 mask 이미지를 세 번째 image로 Qwen에 추가합니다.
+```
+
+기본 Qwen + RGB dual prior:
+
+```bash
+cd RSCD
+python Dual_Branch/changevg_qwen_infer.py \
+  --model-path /workspace/.hf_home/hub/models--Qwen--Qwen2.5-VL-7B-Instruct/snapshots/cc594898137f460bfe9f0759e9844b3ce807cfb5 \
+  --mode guided_text \
+  --dual-mode rgb
+```
+
+기본 Qwen + RGB+FFT dual prior:
+
+```bash
+python Dual_Branch/changevg_qwen_infer.py \
+  --model-path /workspace/.hf_home/hub/models--Qwen--Qwen2.5-VL-7B-Instruct/snapshots/cc594898137f460bfe9f0759e9844b3ce807cfb5 \
+  --mode guided_text \
+  --dual-mode rgb_fft
+```
+
+LoRA Qwen + RGB+FFT dual prior:
+
+```bash
+python Dual_Branch/changevg_qwen_infer.py \
+  --model-path /workspace/.hf_home/hub/models--Qwen--Qwen2.5-VL-7B-Instruct/snapshots/cc594898137f460bfe9f0759e9844b3ce807cfb5 \
+  --mode guided_text \
+  --dual-mode rgb_fft \
+  --use_lora \
+  --lora_adapter_path Dual_Branch/weights/adapter
+```
+
+결과 JSONL에는 `mode`, `dual_mode`, `use_lora`, `lora_adapter_path`, `prompt`, `prediction`, `reference`, `dual_prior`가 함께 저장됩니다.
+
+## Single Image Qwen LoRA Inference
+
+LoRA adapter가 제대로 붙는지 단일 이미지로 확인하려면 다음 스크립트를 사용합니다.
+
+```bash
+cd RSCD
+python Dual_Branch/qwen_lora_single_image_infer.py \
+  --model-path /workspace/.hf_home/hub/models--Qwen--Qwen2.5-VL-7B-Instruct/snapshots/cc594898137f460bfe9f0759e9844b3ce807cfb5 \
+  --image Dual_Branch/test.png \
+  --prompt "Describe this image."
+```
+
+LoRA adapter는 단독 모델이 아니므로 항상 base Qwen 경로와 adapter 경로가 함께 필요합니다. 기본 adapter 경로는 `Dual_Branch/weights/adapter`입니다.
+
 ## Notes
 
 - `download_segformer.py`는 학습 재현 기준으로 보관해야 합니다.
@@ -332,7 +397,9 @@ Dual_Branch는 다음 정보를 만듭니다.
 - `test.py`와 `test2.py`는 `.pth`와 `.safetensors` checkpoint를 모두 지원합니다.
 - 기본 safetensors 위치는 `Dual_Branch/weights/`입니다.
 - `adapter/`와 `finetine_yaml/`은 Qwen/VLM fine-tuning 및 adapter 연결 쪽 파일입니다.
-- 
-```apt update
+- caption metric 계산 중 `FileNotFoundError: java`가 나면 JRE를 설치해야 합니다.
+
+```bash
+apt update
 apt install -y default-jre
 ```

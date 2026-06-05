@@ -15,6 +15,7 @@ from tqdm import tqdm
 
 ROOT = Path(__file__).resolve().parent
 REPO_ROOT = ROOT.parent
+DEFAULT_LORA_ADAPTER_PATH = ROOT / "weights" / "adapter"
 sys.path.insert(0, str(ROOT))
 
 from checkpoint_loader import load_checkpoint  # noqa: E402
@@ -168,12 +169,22 @@ class DualBranchGuide:
 
 
 class QwenVL:
-    def __init__(self, model_path, max_new_tokens, max_pixels, attn_implementation):
+    def __init__(
+        self,
+        model_path,
+        max_new_tokens,
+        max_pixels,
+        attn_implementation,
+        use_lora=False,
+        lora_adapter_path=None,
+    ):
         try:
             from modelscope import AutoProcessor, Qwen2_5_VLForConditionalGeneration
         except ImportError:
             from transformers import AutoProcessor, Qwen2_5_VLForConditionalGeneration
         from qwen_vl_utils import process_vision_info
+        if use_lora:
+            from peft import PeftModel
 
         kwargs = {
             "torch_dtype": "auto",
@@ -182,7 +193,13 @@ class QwenVL:
         if attn_implementation:
             kwargs["attn_implementation"] = attn_implementation
 
-        self.model = Qwen2_5_VLForConditionalGeneration.from_pretrained(model_path, **kwargs)
+        model = Qwen2_5_VLForConditionalGeneration.from_pretrained(model_path, **kwargs)
+        if use_lora:
+            lora_adapter_path = Path(lora_adapter_path).expanduser()
+            if not lora_adapter_path.exists():
+                raise FileNotFoundError(f"LoRA adapter path not found: {lora_adapter_path}")
+            model = PeftModel.from_pretrained(model, str(lora_adapter_path))
+        self.model = model.eval()
         self.processor = AutoProcessor.from_pretrained(model_path, max_pixels=max_pixels)
         self.processor.tokenizer.padding_side = "left"
         self.process_vision_info = process_vision_info
@@ -372,8 +389,22 @@ def main():
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument("--max-new-tokens", type=int, default=128)
     parser.add_argument("--max-pixels", type=int, default=262144)
-    parser.add_argument("--batch-size", type=int, default=128, help="Number of Qwen samples to generate at once.")
+    parser.add_argument("--batch-size", type=int, default=512, help="Number of Qwen samples to generate at once.")
     parser.add_argument("--attn-implementation", default="sdpa")
+    parser.add_argument(
+        "--use-lora",
+        "--use_lora",
+        action="store_true",
+        dest="use_lora",
+        help="Load Qwen with a PEFT LoRA adapter.",
+    )
+    parser.add_argument(
+        "--lora-adapter-path",
+        "--lora_adapter_path",
+        default=str(DEFAULT_LORA_ADAPTER_PATH),
+        dest="lora_adapter_path",
+        help="LoRA adapter directory containing adapter_config.json and adapter_model.safetensors.",
+    )
 
     parser.add_argument("--network", default="segformer-mit_b1")
     parser.add_argument("--encoder-dim", type=int, default=512)
@@ -399,6 +430,8 @@ def main():
         max_new_tokens=args.max_new_tokens,
         max_pixels=args.max_pixels,
         attn_implementation=args.attn_implementation,
+        use_lora=args.use_lora,
+        lora_adapter_path=args.lora_adapter_path,
     )
 
     samples = list(load_samples(args.dataset_json))
@@ -438,6 +471,9 @@ def main():
                     "index": sample_index,
                     "sample_id": sample_id_from_images(images),
                     "mode": args.mode,
+                    "dual_mode": args.dual_mode,
+                    "use_lora": args.use_lora,
+                    "lora_adapter_path": args.lora_adapter_path if args.use_lora else None,
                     "images": images,
                     "mask_path": mask_path,
                     "instruction": raw_instruction,
