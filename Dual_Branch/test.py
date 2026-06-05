@@ -12,6 +12,10 @@ from model.model_encoder_att import Encoder, AttentiveEncoder
 from model.model_decoder import DecoderTransformer
 from utils_tool.utils import *
 from utils_tool.metrics import Evaluator
+from checkpoint_loader import checkpoint_result_name, load_checkpoint
+
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+REPO_ROOT = os.path.dirname(SCRIPT_DIR)
 
 GRID_LABELS = {
     (0, 0): "top left corner",
@@ -61,17 +65,12 @@ def build_dual_prior_record(name, pred_caption, pred_mask):
     }
 
 def save_dual_prior_records(records, save_path):
-    json_path = os.path.join(save_path, "dual_prior.json")
     jsonl_path = os.path.join(save_path, "dual_prior.jsonl")
-
-    with open(json_path, "w", encoding="utf-8") as f:
-        json.dump(records, f, ensure_ascii=False, indent=2)
 
     with open(jsonl_path, "w", encoding="utf-8") as f:
         for record in records:
             f.write(json.dumps(record, ensure_ascii=False) + "\n")
-
-    print("Saved dual_prior JSON:", json_path)
+            
     print("Saved dual_prior JSONL:", jsonl_path)
 
 def save_mask(pred, gt, name, save_path,args):
@@ -151,9 +150,9 @@ def main(args):
         word_vocab = json.load(f)
     # 체크포인트 로드
     snapshot_full_path = args.checkpoint
-    checkpoint = torch.load(snapshot_full_path)
+    checkpoint = load_checkpoint(snapshot_full_path)
 
-    args.result_path = os.path.join(args.result_path, os.path.basename(snapshot_full_path).replace('.pth', ''))
+    args.result_path = os.path.join(args.result_path, checkpoint_result_name(snapshot_full_path))
     if os.path.exists(args.result_path) == False:
         os.makedirs(args.result_path)
     else:
@@ -339,10 +338,10 @@ if __name__ == '__main__':
     # 데이터 파라미터
     parser.add_argument('--sys', default='win', help='system win or linux')
     parser.add_argument('--data_folder',
-        default='../data/coding/datasets/LEVIR-MCI-dataset/images',
+        default=os.path.join(REPO_ROOT, 'data', 'coding', 'datasets', 'LEVIR-MCI-dataset', 'images'),
         help='folder with image files')
-    parser.add_argument('--list_path', default='./data/LEVIR_MCI/', help='path of the data lists')
-    parser.add_argument('--token_folder', default='./data/LEVIR_MCI/tokens/', help='folder with token files')
+    parser.add_argument('--list_path', default='./Dual_Branch/data/LEVIR_MCI/', help='path of the data lists')
+    parser.add_argument('--token_folder', default='./Dual_Branch/data/LEVIR_MCI/tokens/', help='folder with token files')
     parser.add_argument('--vocab_file', default='vocab', help='path of the data lists')
     parser.add_argument('--max_length', type=int, default=41, help='path of the data lists')
     parser.add_argument('--allow_unk', type=int, default=1, help='if unknown token is allowed')
@@ -350,7 +349,16 @@ if __name__ == '__main__':
 
     # 테스트 설정
     parser.add_argument('--gpu_id', type=int, default=0, help='gpu id in the training.')
-    parser.add_argument('--checkpoint', default='./models_ckpt/MCI_model.pth', help='path to checkpoint')
+    parser.add_argument(
+        '--checkpoint',
+        default=os.path.join(
+            SCRIPT_DIR,
+            'weights',
+            'Dual_Branch',
+            'Dual_Branch.safetensors',
+        ),
+        help='path to .pth or .safetensors checkpoint',
+    )
     parser.add_argument('--print_freq', type=int, default=100, help='print training/validation stats every __ batches')
     parser.add_argument('--test_batchsize', default=1, help='batch_size for test')
     parser.add_argument('--workers', type=int, default=0, help='for data-loading')

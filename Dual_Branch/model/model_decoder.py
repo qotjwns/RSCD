@@ -237,7 +237,7 @@ class DecoderTransformer(nn.Module):
         x = x.view(batch, channel, -1).permute(2, 0, 1)
         
         word_length = encoded_captions.size(1)
-        mask = torch.triu(torch.ones(word_length, word_length) * float('-inf'), diagonal=1)
+        mask = torch.triu(torch.ones(word_length, word_length, device=encoded_captions.device, dtype=torch.bool), diagonal=1)
         mask = mask.cuda()
         tgt_pad_mask = (encoded_captions == self.word_vocab['<NULL>'])|(encoded_captions == self.word_vocab['<END>'])
 
@@ -271,7 +271,7 @@ class DecoderTransformer(nn.Module):
 
         tgt = torch.zeros(batch, self.max_lengths).to(torch.int64).cuda() #(batch_size, self.max_lengths)
 
-        mask = torch.triu(torch.ones(self.max_lengths, self.max_lengths) * float('-inf'), diagonal=1)
+        mask = torch.triu(torch.ones(self.max_lengths, self.max_lengths, device=x.device, dtype=torch.bool), diagonal=1)
         mask = mask.cuda()
         tgt[:, 0] = torch.LongTensor([self.word_vocab['<START>']] *batch).cuda() #(batch_size, 1)
         seqs = torch.LongTensor([[self.word_vocab['<START>']]] *batch).cuda() #(batch_size, 1)

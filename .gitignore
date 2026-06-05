@@ -221,7 +221,7 @@ __marimo__/
 .streamlit/secrets.toml
 
 #weights
-/infer/weights
+/Dual_Branch/weights
 
 #data
 data.zip

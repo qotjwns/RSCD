@@ -12,7 +12,7 @@ def load_checkpoint(model, filename, map_location='cpu', strict=False, logger=No
     checkpoint = torch.load(filename, map_location=map_location)
     state_dict = checkpoint.get('state_dict', checkpoint) if isinstance(checkpoint, dict) else checkpoint
     return model.load_state_dict(state_dict, strict=strict)
-from timm.models.layers import DropPath, to_2tuple, trunc_normal_
+from timm.layers import DropPath, to_2tuple, trunc_normal_
 import math
 import torch
 from torch import nn

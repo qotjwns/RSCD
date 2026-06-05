@@ -1,315 +1,338 @@
-# ChangeVG
+# ChangeVG / RSCD
 
-원격탐사 변화 이해(Remote Sensing Change Understanding)를 위한 프로젝트입니다. 현재 이 저장소에서 핵심적으로 사용하는 코드는 `Dual_Branch`이며, 두 시점의 원격탐사 이미지 A/B를 입력으로 받아 변화 마스크와 변화 설명 문장을 함께 예측합니다.
+Remote Sensing Change Understanding(RSCU)을 위한 프로젝트입니다. 두 시점의 원격탐사 이미지 `A/B`를 입력으로 받아 변화 마스크, 변화 설명 문장, 객체 수, 위치 정보를 생성하는 흐름을 다룹니다.
 
-## 파일 구조
+현재 저장소는 크게 두 부분으로 나뉩니다.
 
 ```text
-ChangeVG/
+1. Dual_Branch
+   SegFormer-B1 기반 vision-guided module입니다.
+   이미지 A/B에서 변화 마스크와 coarse caption을 예측합니다.
+
+2. Qwen/VLM adapter
+   Dual_Branch가 만든 visual prior를 VLM prompt에 넣어 ChangeVG 추론/튜닝에 사용합니다.
+```
+
+논문: `2509.23105v2.pdf`  
+arXiv: https://arxiv.org/abs/2509.23105
+
+## Repository Layout
+
+```text
+RSCD/
 ├── README.md
+├── demo.ipynb
+├── deal_data/
+│   └── deal_data.ipynb
+├── finetine_yaml/
+│   └── qwen2vl_lora_sft.yaml
+├── infer/
 ├── data/
 │   └── coding/
 │       ├── datasets/
 │       │   ├── LEVIR-MCI-dataset/
-│       │   │   └── images/            # LEVIR-MCI 이미지 데이터
-│       │   │       ├── train/
-│       │   │       ├── val/
-│       │   │       └── test/
 │       │   └── LEVIR-MCI-dataset-fft/
-│       │       └── images/            # 저주파 suppress 복원 이미지 데이터
-│       └── muti_task_data/            # ChangeIMTI 계열 task json
-├── models_ckpt/
-│   └── baseline_.../                  # train.py 기본 checkpoint 저장 위치
+│       └── muti_task_data/
 └── Dual_Branch/
-    ├── train.py                       # Dual Branch 학습 루프
-    ├── test.py                        # 테스트셋 평가 스크립트
-    ├── predict.py                     # 단일 이미지 pair 추론 유틸
-    ├── download_segformer.py          # SegFormer MiT 가중치 다운로드/변환
-    ├── make_fft_dataset.py            # FFT 저주파 suppress 데이터 생성
-    ├── preprocess_data.py             # caption token/vocab 전처리
-    ├── changevg_qwen_infer.py         # Dual Branch + Qwen 추론 연결
-    ├── eval_dual_prior_predictions.py # 예측 결과 후처리/평가
-    ├── requirement.txt                # Dual Branch 의존성
+    ├── train.py
+    ├── test.py
+    ├── train_2.py
+    ├── test2.py
+    ├── checkpoint_loader.py
+    ├── download_segformer.py
+    ├── make_fft_dataset.py
+    ├── changevg_qwen_infer.py
+    ├── preprocess_data.py
+    ├── requirement.txt
     ├── data/
-    │   ├── LEVIR_MCI.py               # PyTorch Dataset
-    │   └── LEVIR_MCI/
-    │       ├── train.txt              # train split 목록
-    │       ├── val.txt                # validation split 목록
-    │       ├── test.txt               # test split 목록
-    │       ├── vocab.json             # caption vocabulary
-    │       ├── tokens.zip             # caption token 압축본
-    │       └── tokens/                # image별 caption token txt
     ├── model/
-    │   ├── model_encoder_att.py       # Encoder + AttentiveEncoder
-    │   ├── model_decoder.py           # Transformer caption decoder
-    │   ├── segformer.py               # SegFormer MiT backbone 정의
-    │   └── pretrained/
-    │       └── mit_b1.pth             # SegFormer MiT-B1 pretrained weight
     ├── utils_tool/
-    │   ├── utils.py                   # loss/accuracy/eval score 유틸
-    │   └── metrics.py                 # segmentation metric 계산
-    └── models_ckpt/
-        └── Dual_Branch.pth            # 제공된 추론 checkpoint
+    └── weights/
 ```
 
-## 모델 입력과 출력
-
-입력은 같은 지역을 서로 다른 시점에 촬영한 이미지 2장입니다.
+## Dual_Branch Structure
 
 ```text
-imgA: 변화 전 이미지, 대략 (B, 3, 256, 256)
-imgB: 변화 후 이미지, 대략 (B, 3, 256, 256)
+Dual_Branch/
+├── train.py                  # RGB Dual_Branch 학습
+├── test.py                   # RGB test split 추론/평가
+├── train_2.py                # RGB + FFT branch 학습
+├── test2.py                  # RGB + FFT branch 추론/평가
+├── checkpoint_loader.py      # .pth / .safetensors 공용 checkpoint loader
+├── download_segformer.py     # nvidia/mit-b1 다운로드 및 key 변환
+├── make_fft_dataset.py       # FFT-suppressed 데이터셋 생성
+├── changevg_qwen_infer.py    # Dual_Branch visual prior + Qwen 추론
+├── preprocess_data.py        # caption token/vocab 전처리
+├── requirement.txt
+├── data/
+│   ├── LEVIR_MCI.py          # PyTorch Dataset
+│   └── LEVIR_MCI/
+│       ├── train.txt
+│       ├── val.txt
+│       ├── test.txt
+│       ├── vocab.json
+│       └── tokens.zip
+├── model/
+│   ├── model_encoder_att.py  # Encoder + AttentiveEncoder
+│   ├── model_decoder.py      # Transformer caption decoder
+│   └── segformer.py          # SegFormer / MiT backbone
+├── utils_tool/
+│   ├── metrics.py
+│   └── utils.py
+└── weights/
+    ├── Dual_Branch/
+    │   ├── Dual_Branch.config.json
+    │   └── Dual_Branch.safetensors
+    ├── Dual_Branch_FFT/
+    │   ├── Dual_Branch_FFT.config.json
+    │   └── Dual_Branch_FFT.safetensors
+    └── adapter/
+        ├── adapter_config.json
+        └── adapter_model.safetensors
 ```
 
-출력은 두 가지입니다.
+## Data Layout
+
+현재 이미지 데이터셋은 아래 구조를 기대합니다.
 
 ```text
-seg_pre: 변화 검출 segmentation logits, 대략 (B, 3, H, W)
-caption: 변화 설명 문장 token sequence
+data/coding/datasets/
+├── LEVIR-MCI-dataset/
+│   └── images/
+│       ├── train/{A,B,label,label_rgb}
+│       ├── val/{A,B,label,label_rgb}
+│       └── test/{A,B,label,label_rgb}
+└── LEVIR-MCI-dataset-fft/
+    └── images/
+        ├── train/{A,B,label,label_rgb}
+        ├── val/{A,B,label,label_rgb}
+        └── test/{A,B,label,label_rgb}
 ```
 
-segmentation class는 다음과 같습니다.
-
-```text
-0: background
-1: road
-2: building
-```
-
-## 환경 설정
-
-가상환경이 이미 있다면 활성화합니다.
-
-```bash
-source venv/bin/activate
-```
-
-필요한 패키지는 `Dual_Branch/requirement.txt` 기준으로 설치합니다.
-
-```bash
-pip install -r Dual_Branch/requirement.txt
-```
-
-주의할 점은 현재 코드가 `.cuda()`를 직접 호출한다는 것입니다. 따라서 기본 학습/테스트는 CUDA 사용 가능한 PyTorch 환경을 전제로 합니다. CPU-only 환경에서 실행하려면 `.cuda()` 호출부를 device 기반 코드로 바꿔야 합니다.
-
-## 데이터 구조
-
-이미지 데이터셋은 아래 구조를 기대합니다.
-
-```text
-LEVIR-MCI-dataset/
-└── images/
-    ├── train/
-    │   ├── A/                         # 변화 전 이미지
-    │   ├── B/                         # 변화 후 이미지
-    │   └── label/                     # 변화 mask label
-    ├── val/
-    │   ├── A/
-    │   ├── B/
-    │   └── label/
-    └── test/
-        ├── A/
-        ├── B/
-        └── label/
-```
-
-caption token과 vocab 파일은 아래 위치에 있어야 합니다.
+Caption 학습/평가에 필요한 split, vocab, token 파일은 아래 위치를 사용합니다.
 
 ```text
 Dual_Branch/data/LEVIR_MCI/
-├── vocab.json                         # caption vocabulary
-├── train.txt                          # train image list
-├── val.txt                            # validation image list
-├── test.txt                           # test image list
-└── tokens/                            # image별 caption token
+├── train.txt
+├── val.txt
+├── test.txt
+├── vocab.json
+└── tokens.zip
 ```
 
-`tokens/` 폴더가 없고 `tokens.zip`만 있다면 압축을 먼저 풉니다.
+`train.py`와 `test.py`는 기본적으로 `Dual_Branch/data/LEVIR_MCI/tokens/` 폴더를 찾습니다. 현재 `tokens.zip`만 있다면 먼저 압축을 풉니다.
 
 ```bash
-cd Dual_Branch/data/LEVIR_MCI
+cd RSCD/Dual_Branch/data/LEVIR_MCI
 unzip tokens.zip
 ```
 
-## FFT 데이터 생성
+## Environment
 
-`make_fft_dataset.py`는 `Dual_Branch/data/LEVIR_MCI/{train,val,test}.txt` 목록을 기준으로 원본 A/B 이미지를 읽고, FFT 영역에서 중심 저주파 영역을 suppress한 뒤 inverse FFT로 복원한 이미지를 새 데이터셋으로 저장합니다. `label`, `label_rgb`는 변환하지 않고 그대로 복사합니다.
-
-```text
-입력:
-data/coding/datasets/LEVIR-MCI-dataset/
-└── images/
-
-출력:
-data/coding/datasets/LEVIR-MCI-dataset-fft/
-└── images/
-    ├── train/
-    │   ├── A/
-    │   ├── B/
-    │   ├── label/
-    │   └── label_rgb/
-    ├── val/
-    └── test/
-```
-
-실행 명령:
+CUDA 사용 가능한 PyTorch 환경을 권장합니다. 현재 Dual_Branch 코드에는 `.cuda()` 호출이 직접 들어있어서 CPU-only 환경에서는 수정이 필요합니다.
 
 ```bash
-./venv/bin/python Dual_Branch/make_fft_dataset.py
+cd RSCD
+pip install -r Dual_Branch/requirement.txt
 ```
 
-저주파 suppress 설정은 [Dual_Branch/make_fft_dataset.py](/Users/baeseojun/ChangeVG/Dual_Branch/make_fft_dataset.py:19) 상단 전역변수로 조정합니다.
+주요 의존성은 `torch`, `torchvision`, `timm`, `einops`, `transformers`, `huggingface-hub`, `safetensors`, `opencv-python`, `imageio`, `scikit-image`, `pycocoevalcap`입니다.
 
-```python
-LOW_FREQ_SUPPRESS_RADIUS_RATIO = 0.08
-LOW_FREQ_SUPPRESS_STRENGTH = 0.7
-```
+## SegFormer-B1 Pretrained Weight
 
-의미:
-
-```text
-LOW_FREQ_SUPPRESS_RADIUS_RATIO
-  이미지 짧은 변 기준 저주파 영역 반지름 비율입니다.
-  예: 256x256 이미지에서 0.08이면 약 20px 반지름입니다.
-
-LOW_FREQ_SUPPRESS_STRENGTH
-  1.0 = 저주파 완전 제거
-  0.5 = 절반 약화
-  0.0 = 원본 유지
-```
-
-## SegFormer 가중치
-
-`download_segformer.py`는 Hugging Face의 `nvidia/mit-b1` weight를 다운로드한 뒤, 현재 `segformer.py`가 읽을 수 있는 key 형식으로 변환해서 아래 위치에 저장합니다.
-
-```text
-Dual_Branch/model/pretrained/
-└── mit_b1.pth                         # segformer.py가 로드하는 최종 weight
-```
-
-실행 명령:
+논문 구조에서 Dual_Branch feature extractor는 shared SegFormer-B1 encoder를 사용합니다. 학습 재현을 하려면 먼저 SegFormer-B1 pretrained weight를 준비하는 것이 좋습니다.
 
 ```bash
-./venv/bin/python Dual_Branch/download_segformer.py
+cd RSCD
+python Dual_Branch/download_segformer.py
 ```
 
-## 학습 실행
-
-현재 `train.py`의 기본 경로는 저장소 루트 `ChangeVG`에서 실행하는 기준으로 맞춰져 있습니다.
-
-RGB 데이터로 학습:
-
-```bash
-./venv/bin/python -u Dual_Branch/train.py
-```
-
-FFT 데이터로 학습:
-
-```bash
-./venv/bin/python -u Dual_Branch/train.py --use_fft
-```
-
-기본 학습 설정은 다음과 같습니다.
+실행 후 아래 파일이 생성됩니다.
 
 ```text
-train_goal = 2
-train_stage = s1
+Dual_Branch/model/pretrained/mit_b1.pth
+```
+
+`model/segformer.py`는 이 파일이 있으면 로드하고, 없으면 경고를 출력한 뒤 random initialization으로 학습을 시작합니다. 이미 학습된 `.pth` checkpoint를 불러 추론만 하는 경우에는 checkpoint의 `encoder_dict`가 encoder 전체를 덮어쓰므로 pretrained 파일이 없어도 동작할 수 있습니다.
+
+## RGB Dual_Branch Training
+
+권장 실행 위치는 `RSCD/` 루트입니다.
+
+```bash
+cd RSCD
+python -u Dual_Branch/train.py
+```
+
+기본 설정:
+
+```text
+data_folder = ./data/coding/datasets/LEVIR-MCI-dataset/images
+list_path = ./Dual_Branch/data/LEVIR_MCI/
+token_folder = ./Dual_Branch/data/LEVIR_MCI/tokens/
 network = segformer-mit_b1
-train_batchsize = 64
+train_goal = 2
 num_epochs = 250
 ```
 
-`--use_fft`를 사용하면 학습 데이터 경로가 자동으로 아래 위치로 바뀝니다.
+`train_goal=2`일 때 학습 흐름:
 
 ```text
-data/coding/datasets/LEVIR-MCI-dataset-fft/images
-```
-
-`train_goal=2`일 때 학습 순서는 다음과 같습니다.
-
-```text
-1. goal=2: 변화 검출 + captioning 공동 학습
+1. goal=2: detection + captioning joint training
 2. goal=1: captioning branch fine-tuning
 3. goal=0: detection branch fine-tuning
 ```
 
-학습 로그에는 raw loss와 normalized loss가 함께 출력됩니다.
+학습 중 저장되는 checkpoint는 `encoder_dict`, `encoder_trans_dict`, `decoder_dict`를 포함합니다.
 
-```text
-Raw Det_Loss
-Norm Det_Loss
-Raw Cap_loss
-Norm Cap_loss
-```
+## RGB Test / Evaluation
 
-공동 학습 단계에서는 normalized loss가 optimization에 사용되고, raw loss는 실제 loss 추세 확인을 위해 로그에 남깁니다.
+`test.py`는 `.pth` checkpoint와 `Dual_Branch/weights/Dual_Branch/Dual_Branch.safetensors`를 모두 읽을 수 있습니다. 기본값은 `Dual_Branch/weights` 아래 safetensors입니다.
 
-저장되는 checkpoint 이름에는 데이터 종류가 들어갑니다.
-
-```text
-LEVIR_MCI_RGB_bts_...
-LEVIR_MCI_FFT_bts_...
-```
-
-best checkpoint alias도 분리됩니다.
-
-```text
-models_ckpt/
-└── baseline_.../
-    └── baseline_.../
-        ├── Dual_Branch.pth            # RGB 학습 best alias
-        └── Dual_Branch_FFT.pth        # FFT 학습 best alias
-```
-
-## 테스트 실행
-
-테스트는 기본적으로 `Dual_Branch/test.py`를 사용합니다. 현재 `test.py`는 `--use_fft` 인자가 없으므로, FFT 데이터로 테스트하려면 `--data_folder`를 직접 지정합니다.
+`RSCD/` 루트에서 실행할 때는 경로를 명시하는 편이 안전합니다.
 
 ```bash
-./venv/bin/python -u Dual_Branch/test.py \
-  --data_folder data/coding/datasets/LEVIR-MCI-dataset/images \
-  --list_path Dual_Branch/data/LEVIR_MCI/ \
-  --token_folder Dual_Branch/data/LEVIR_MCI/tokens/ \
-  --checkpoint models_ckpt/<run_dir>/<run_dir>/Dual_Branch.pth
+cd RSCD
+python -u Dual_Branch/test.py \
+  --data_folder ./data/coding/datasets/LEVIR-MCI-dataset/images \
+  --list_path ./Dual_Branch/data/LEVIR_MCI/ \
+  --token_folder ./Dual_Branch/data/LEVIR_MCI/tokens/ \
+  --save_mask \
+  --save_caption
 ```
 
-FFT 데이터 테스트:
+주요 출력:
+
+```text
+predict_result/
+├── dual_prior.json
+├── dual_prior.jsonl
+├── score.json
+├── *_mask.png
+├── *_gt.png
+└── *_cap.txt
+```
+
+평가 지표:
+
+```text
+Segmentation: Pixel Accuracy, Class Accuracy, mIoU, FWIoU, class IoU
+Captioning: BLEU-1/2/3/4, METEOR, ROUGE_L, CIDEr
+```
+
+## FFT Branch
+
+FFT 데이터셋은 `LEVIR-MCI-dataset-fft` 아래에 있습니다. 새로 생성해야 할 때는 다음 스크립트를 사용합니다.
 
 ```bash
-./venv/bin/python -u Dual_Branch/test.py \
-  --data_folder data/coding/datasets/LEVIR-MCI-dataset-fft/images \
-  --list_path Dual_Branch/data/LEVIR_MCI/ \
-  --token_folder Dual_Branch/data/LEVIR_MCI/tokens/ \
-  --checkpoint models_ckpt/<run_dir>/<run_dir>/Dual_Branch_FFT.pth
+cd RSCD
+python Dual_Branch/make_fft_dataset.py
 ```
 
-결과는 기본적으로 아래 위치에 저장됩니다.
+RGB + FFT 모델은 별도 스크립트를 사용합니다.
 
-```text
-Dual_Branch/
-└── predict_result/                    # 저장된 mask/caption 예측 결과
+```bash
+cd RSCD
+python -u Dual_Branch/train_2.py
+python -u Dual_Branch/test2.py
 ```
 
-## 주요 평가 지표
+일반 `train.py`에도 `--use_fft` 옵션이 있지만, 이 옵션은 RGB 입력 대신 FFT-suppressed 이미지 데이터셋을 사용하도록 바꾸는 용도입니다. RGB branch와 FFT branch를 함께 쓰는 모델은 `train_2.py` / `test2.py` 쪽을 확인하세요.
 
-변화 검출 성능:
+## Inference Weights
+
+배포용 safetensors weight는 `Dual_Branch/weights/` 아래에 둡니다.
 
 ```text
-Pixel Accuracy
-Class Accuracy
-mIoU
-FWIoU
-class별 IoU
+Dual_Branch/weights/
+├── Dual_Branch/
+│   ├── Dual_Branch.safetensors
+│   └── Dual_Branch.config.json
+├── Dual_Branch_FFT/
+│   ├── Dual_Branch_FFT.safetensors
+│   └── Dual_Branch_FFT.config.json
+└── adapter/
+    ├── adapter_model.safetensors
+    └── adapter_config.json
 ```
 
-captioning 성능:
+`test.py`와 `test2.py`는 `checkpoint_loader.py`를 통해 `.pth`와 `.safetensors`를 모두 처리합니다.
 
 ```text
-BLEU-1
-BLEU-2
-BLEU-3
-BLEU-4
-METEOR
-ROUGE_L
-CIDEr
+Dual_Branch/test.py
+  기본 checkpoint = Dual_Branch/weights/Dual_Branch/Dual_Branch.safetensors
+
+Dual_Branch/test2.py
+  기본 checkpoint = Dual_Branch/weights/Dual_Branch_FFT/Dual_Branch_FFT.safetensors
+```
+
+safetensors loader는 같은 폴더의 `.config.json`에 들어있는 `checkpoint_groups`를 읽고, 기존 `.pth` checkpoint와 같은 dict 구조로 복원합니다.
+
+```text
+Dual_Branch.safetensors
+  -> encoder_dict
+  -> encoder_trans_dict
+  -> decoder_dict
+
+Dual_Branch_FFT.safetensors
+  -> encoder_dict
+  -> encoder_rgb_dict
+  -> encoder_fft_dict
+  -> fusion_a_dict
+  -> fusion_b_dict
+  -> encoder_trans_dict
+  -> decoder_dict
+```
+
+`adapter/`는 `test.py` / `test2.py`가 직접 사용하는 weight가 아니라 Qwen/VLM adapter 쪽 파일입니다.
+
+## Token Usage
+
+Caption token은 학습과 평가에서 쓰입니다.
+
+```text
+training:
+  decoder.forward(feat1, feat2, token, token_len)
+  정답 caption token을 teacher forcing으로 사용
+
+validation/test/inference:
+  decoder.sample(feat1, feat2)
+  <START> token부터 autoregressive하게 caption 생성
+```
+
+즉 실제 이미지 추론에는 외부 `tokens/*.txt`를 모델 입력으로 넣지 않습니다. 다만 BLEU, METEOR, ROUGE, CIDEr 같은 caption 평가를 하려면 reference caption으로 token 파일이 필요합니다.
+
+## Dual_Branch Output
+
+Dual_Branch는 다음 정보를 만듭니다.
+
+```text
+1. seg_pre
+   변화 segmentation logits
+
+2. pred_mask
+   argmax 결과 mask
+   class 0 = background
+   class 1 = road
+   class 2 = building
+
+3. global_caption
+   decoder.sample()이 생성한 coarse change caption
+
+4. dual_prior
+   caption, road/building count, road/building location
+```
+
+이 `dual_prior`는 `changevg_qwen_infer.py`에서 Qwen/VLM prompt에 넣는 visual prior로 사용할 수 있습니다.
+
+## Notes
+
+- `download_segformer.py`는 학습 재현 기준으로 보관해야 합니다.
+- `tokens.zip`은 압축 해제 후 `tokens/` 폴더가 필요합니다.
+- `test.py`와 `test2.py`는 `.pth`와 `.safetensors` checkpoint를 모두 지원합니다.
+- 기본 safetensors 위치는 `Dual_Branch/weights/`입니다.
+- `adapter/`와 `finetine_yaml/`은 Qwen/VLM fine-tuning 및 adapter 연결 쪽 파일입니다.
+- 
+```apt update
+apt install -y default-jre
 ```

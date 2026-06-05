@@ -14,11 +14,13 @@ from tqdm import tqdm
 
 
 ROOT = Path(__file__).resolve().parent
-DUAL_BRANCH_DIR = ROOT / "Dual_Branch"
-sys.path.insert(0, str(DUAL_BRANCH_DIR))
+REPO_ROOT = ROOT.parent
+sys.path.insert(0, str(ROOT))
 
+from checkpoint_loader import load_checkpoint  # noqa: E402
 from model.model_decoder import DecoderTransformer  # noqa: E402
 from model.model_encoder_att import AttentiveEncoder, Encoder  # noqa: E402
+from train_2 import RGBFFTFusionEncoder  # noqa: E402
 
 
 GRID_LABELS = {
@@ -46,9 +48,14 @@ class DualBranchGuide:
         with open(args.vocab_json, "r", encoding="utf-8") as f:
             self.word_vocab = json.load(f)
         self.id_to_word = {idx: word for word, idx in self.word_vocab.items()}
+        self.dual_mode = args.dual_mode
+        self.fft_data_root = args.fft_data_root
 
-        checkpoint = torch.load(args.dual_checkpoint, map_location="cpu")
-        self.encoder = Encoder(args.network)
+        checkpoint = load_checkpoint(args.dual_checkpoint, map_location="cpu")
+        if self.dual_mode == "rgb_fft":
+            self.encoder = RGBFFTFusionEncoder(args.network)
+        else:
+            self.encoder = Encoder(args.network)
         self.encoder_trans = AttentiveEncoder(
             train_stage=None,
             n_layers=args.n_layers,
@@ -96,7 +103,12 @@ class DualBranchGuide:
         img_a = self.preprocess(image_a)
         img_b = self.preprocess(image_b)
 
-        feat1, feat2 = self.encoder(img_a, img_b)
+        if self.dual_mode == "rgb_fft":
+            img_a_fft = self.preprocess(rgb_to_fft_path(image_a, self.fft_data_root))
+            img_b_fft = self.preprocess(rgb_to_fft_path(image_b, self.fft_data_root))
+            feat1, feat2 = self.encoder(img_a, img_b, img_a_fft, img_b_fft)
+        else:
+            feat1, feat2 = self.encoder(img_a, img_b)
         feat1, feat2, seg_pre = self.encoder_trans(feat1, feat2)
         seq = self.decoder.sample(feat1, feat2, k=1)
 
@@ -249,6 +261,13 @@ def remap_path(path, path_maps):
     return mapped
 
 
+def rgb_to_fft_path(image_path, fft_data_root):
+    image_path = Path(image_path)
+    split = image_path.parent.parent.name
+    branch = image_path.parent.name
+    return str(Path(fft_data_root) / split / branch / image_path.name)
+
+
 def load_samples(dataset_path):
     dataset_path = Path(dataset_path)
     if dataset_path.is_dir():
@@ -303,6 +322,14 @@ def sample_id_from_images(images):
     return Path(images[0]).stem
 
 
+def resolve_dual_checkpoint(args):
+    if args.dual_checkpoint is not None:
+        return args.dual_checkpoint
+    if args.dual_mode == "rgb_fft":
+        return str(ROOT / "weights" / "Dual_Branch_FFT" / "Dual_Branch_FFT.safetensors")
+    return str(ROOT / "weights" / "Dual_Branch" / "Dual_Branch.safetensors")
+
+
 def main():
     parser = argparse.ArgumentParser(description="Qwen inference with Dual-Branch visual-guided prompts.")
     parser.add_argument(
@@ -312,20 +339,35 @@ def main():
     )
     parser.add_argument(
         "--dataset-json",
-        default="/workspace/data/coding/muti_task_data/test_task_data",
+        default=str(REPO_ROOT / "data" / "coding" / "muti_task_data" / "test_task_data"),
         help="A ChangeIMTI json file or a directory containing task json files.",
     )
-    parser.add_argument("--dual-checkpoint", default="/workspace/RSCD/Dual_Branch/models_ckpt/MCI_model.pth")
-    parser.add_argument("--vocab-json", default="/workspace/RSCD/Dual_Branch/data/LEVIR_MCI/vocab.json")
-    parser.add_argument("--output-jsonl", default="/workspace/RSCD/changevg_qwen_predictions.jsonl")
-    parser.add_argument("--mask-dir", default="/workspace/RSCD/changevg_qwen_masks")
+    parser.add_argument(
+        "--dual-mode",
+        choices=["rgb", "rgb_fft"],
+        default="rgb",
+        help="rgb: use RGB Dual_Branch prior; rgb_fft: use RGB+FFT Dual_Branch prior.",
+    )
+    parser.add_argument(
+        "--dual-checkpoint",
+        default=None,
+        help="Optional path to a .pth or .safetensors checkpoint. If omitted, selected by --dual-mode.",
+    )
+    parser.add_argument(
+        "--fft-data-root",
+        default=str(REPO_ROOT / "data" / "coding" / "datasets" / "LEVIR-MCI-dataset-fft" / "images"),
+        help="Root folder for FFT images with split/A,B subfolders.",
+    )
+    parser.add_argument("--vocab-json", default=str(ROOT / "data" / "LEVIR_MCI" / "vocab.json"))
+    parser.add_argument("--output-jsonl", default=str(REPO_ROOT / "changevg_qwen_predictions.jsonl"))
+    parser.add_argument("--mask-dir", default=str(REPO_ROOT / "changevg_qwen_masks"))
     parser.add_argument(
         "--mode",
         choices=["qwen_only", "guided_text", "guided_full"],
-        default="guided_full",
+        default="guided_text",
         help="qwen_only: original JSON prompt only; guided_text: add Dual-Branch priors; guided_full: add priors and mask image.",
     )
-    parser.add_argument("--path-map", action="append", default=["/data/coding=/workspace/data/coding"])
+    parser.add_argument("--path-map", action="append", default=[f"/data/coding={REPO_ROOT / 'data' / 'coding'}"])
     parser.add_argument("--start", type=int, default=0)
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument("--max-new-tokens", type=int, default=128)
@@ -343,6 +385,7 @@ def main():
     parser.add_argument("--feature-dim", type=int, default=512)
     parser.add_argument("--max-length", type=int, default=41)
     args = parser.parse_args()
+    args.dual_checkpoint = resolve_dual_checkpoint(args)
 
     path_maps = parse_path_maps(args.path_map)
     output_path = Path(args.output_jsonl)
