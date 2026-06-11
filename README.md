@@ -14,6 +14,8 @@
 ```text
 RSCD/
 ├── README.md
+├── qwen2vl_lora_sft.yaml
+├── finetune_from_yaml.py
 ├── infer/
 ├── data/
 │   └── coding/
@@ -376,6 +378,70 @@ python Dual_Branch/changevg_qwen_infer.py \
 
 결과 JSONL에는 `mode`, `dual_mode`, `use_lora`, `lora_adapter_path`, `prompt`, `prediction`, `reference`, `dual_prior`가 함께 저장됩니다.
 
+## Qwen2.5-VL LoRA Fine-tuning from YAML
+
+Qwen2.5-VL LoRA/SFT는 LLaMA-Factory YAML 설정으로 실행합니다. 기본 설정 파일은 repo root의 `qwen2vl_lora_sft.yaml`입니다.
+
+```text
+qwen2vl_lora_sft.yaml
+  model_name_or_path: /data/coding/Qwen2.5-VL-7B-Instruct
+  stage: sft
+  finetuning_type: lora
+  lora_rank: 8
+  lora_target: all
+  dataset: caption
+  eval_dataset: test_data_extra
+  output_dir: saves/qwen2_vl-7b/lora/caption
+```
+
+실행 코드는 `finetune_from_yaml.py`입니다. 이 스크립트는 먼저 LLaMA-Factory의 `data/dataset_info.json`에 ChangeVG caption dataset을 등록한 뒤, YAML로 학습을 시작합니다.
+
+```bash
+cd RSCD
+python finetune_from_yaml.py \
+  --config qwen2vl_lora_sft.yaml \
+  --llama-factory-dir /data/coding/LLaMA-Factory
+```
+
+자동 등록되는 dataset 이름은 YAML의 `dataset`, `eval_dataset`과 맞춰져 있습니다.
+
+```text
+caption
+  -> data/coding/muti_task_data/train_task_data/caption.json
+
+test_data_extra
+  -> data/coding/muti_task_data/test_task_data/caption.json
+```
+
+등록되는 데이터 포맷은 ShareGPT multimodal 형식입니다.
+
+```text
+conversations -> messages
+images        -> images
+human         -> user
+gpt           -> assistant
+```
+
+학습 전에 명령과 dataset 등록 내용을 확인하려면 `--dry-run`을 사용합니다.
+
+```bash
+python finetune_from_yaml.py \
+  --config qwen2vl_lora_sft.yaml \
+  --llama-factory-dir /data/coding/LLaMA-Factory \
+  --dry-run
+```
+
+실제 실행 시 필요한 조건:
+
+```text
+1. LLaMA-Factory repository가 --llama-factory-dir 경로에 있어야 합니다.
+2. llamafactory-cli가 현재 shell PATH에 있어야 합니다.
+3. qwen2vl_lora_sft.yaml의 model_name_or_path가 실제 Qwen2.5-VL-7B-Instruct 경로여야 합니다.
+4. caption/test_data_extra JSON 내부 image path가 학습 서버에서 접근 가능해야 합니다.
+```
+
+`llamafactory-cli`가 없는 환경에서는 먼저 LLaMA-Factory 환경을 activate한 뒤 실행하세요. `dataset_info.json`을 직접 관리하고 싶으면 `--skip-dataset-info`를 줄 수 있습니다.
+
 ## Single Image Qwen LoRA Inference
 
 LoRA adapter가 제대로 붙는지 단일 이미지로 확인하려면 다음 스크립트를 사용합니다.
@@ -396,7 +462,8 @@ LoRA adapter는 단독 모델이 아니므로 항상 base Qwen 경로와 adapter
 - `tokens.zip`은 압축 해제 후 `tokens/` 폴더가 필요합니다.
 - `test.py`와 `test2.py`는 `.pth`와 `.safetensors` checkpoint를 모두 지원합니다.
 - 기본 safetensors 위치는 `Dual_Branch/weights/`입니다.
-- `adapter/`와 `finetine_yaml/`은 Qwen/VLM fine-tuning 및 adapter 연결 쪽 파일입니다.
+- `qwen2vl_lora_sft.yaml`과 `finetune_from_yaml.py`는 Qwen2.5-VL LoRA fine-tuning 실행용 파일입니다.
+- `adapter/`는 학습된 Qwen LoRA adapter를 추론 때 연결하는 위치입니다.
 - caption metric 계산 중 `FileNotFoundError: java`가 나면 JRE를 설치해야 합니다.
 
 ```bash
